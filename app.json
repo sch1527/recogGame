@@ -1,0 +1,14 @@
+{
+  "expo": {
+    "name": "산성비 게임",
+    "slug": "recog-game",
+    "version": "1.0.0",
+    "orientation": "landscape",
+    "userInterfaceStyle": "dark",
+    "android": {
+      "package": "com.recog.game",
+      "permissions": ["android.permission.RECORD_AUDIO"]
+    },
+    "plugins": ["expo-speech-recognition"]
+  }
+}
