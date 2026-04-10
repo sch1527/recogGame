@@ -22,9 +22,31 @@ function levenshtein(a: string, b: string): number {
   return dp[m][n];
 }
 
+function soundex(word: string): string {
+  const map: Record<string, string> = {
+    b:'1',f:'1',p:'1',v:'1',
+    c:'2',g:'2',j:'2',k:'2',q:'2',s:'2',x:'2',z:'2',
+    d:'3',t:'3', l:'4', m:'5',n:'5', r:'6',
+  };
+  const s = word.toLowerCase();
+  let code = s[0].toUpperCase();
+  let prev = map[s[0]] ?? '0';
+  for (let i = 1; i < s.length && code.length < 4; i++) {
+    const c = map[s[i]];
+    if (c && c !== prev) { code += c; }
+    prev = c ?? '0';
+  }
+  return code.padEnd(4, '0');
+}
+
 function isFuzzyMatch(target: string, spoken: string): boolean {
-  const allowedDist = Math.floor(target.length * 0.2);
-  return levenshtein(target.toLowerCase(), spoken.toLowerCase()) <= allowedDist;
+  const t = target.toLowerCase();
+  const s = spoken.toLowerCase();
+  const allowedDist = Math.floor(t.length * 0.2);
+  if (levenshtein(t, s) <= allowedDist) return true;
+  if (soundex(t) === soundex(s)) return true;
+  if (t.startsWith(s) && s.length >= Math.ceil(t.length * 0.6)) return true;
+  return false;
 }
 
 type Props = { navigation: NativeStackNavigationProp<RootStackParamList, 'Game'> };
@@ -105,10 +127,13 @@ export default function GameScreen({ navigation }: Props) {
         if (allWords.length < processedUpTo.current) {
           processedUpTo.current = 0;
         }
-        for (let i = processedUpTo.current; i < allWords.length; i++) {
+        // 완성된 단어들(마지막 제외)만 processedUpTo로 스킵
+        for (let i = processedUpTo.current; i < allWords.length - 1; i++) {
           matchWord(allWords[i]);
         }
-        processedUpTo.current = allWords.length;
+        processedUpTo.current = Math.max(processedUpTo.current, allWords.length - 1);
+        // 마지막 단어는 항상 재시도 (현재 발화 중인 단어, interim마다 업데이트됨)
+        matchWord(allWords[allWords.length - 1]);
       }
     });
     const s4 = mod.addListener('error', () => {
