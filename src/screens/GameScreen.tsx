@@ -5,6 +5,8 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../App';
 import FallingWord, { WordItem } from '../components/FallingWord';
 import VoicePanel from '../components/VoicePanel';
+import Character, { CHAR_HEIGHT } from '../components/Character';
+import LaserBeam, { BeamData } from '../components/LaserBeam';
 import { getRandomWord } from '../data/words';
 
 const SIDE_PANEL_W = 130; // VoicePanel 사이드바 너비 (가로 모드)
@@ -75,6 +77,7 @@ export default function GameScreen({ navigation }: Props) {
   const [lastMatched, setLastMatched] = useState('');
   const [isListening, setIsListening] = useState(false);
   const [gameAreaH, setGameAreaH] = useState(H);
+  const [laserBeams, setLaserBeams] = useState<BeamData[]>([]);
 
   const active = useRef(true);
   const scoreRef = useRef(0);
@@ -82,6 +85,8 @@ export default function GameScreen({ navigation }: Props) {
   const livesRef = useRef(3);
   const wordsRef = useRef<WordItem[]>([]);
   const processedUpTo = useRef(0);
+  const gameAreaHRef = useRef(H);
+  const gamWRef = useRef(gameW);
   // 단어 id → setTimeout 타이머: GameScreen에서 직접 관리
   const wordTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
@@ -89,6 +94,8 @@ export default function GameScreen({ navigation }: Props) {
   useEffect(() => { levelRef.current = level; }, [level]);
   useEffect(() => { wordsRef.current = words; }, [words]);
   useEffect(() => { setLevel(Math.floor(cleared / 5) + 1); }, [cleared]);
+  useEffect(() => { gameAreaHRef.current = gameAreaH; }, [gameAreaH]);
+  useEffect(() => { gamWRef.current = gameW; }, [gameW]);
 
   function startListen() {
     ExpoSpeechRecognitionModule.start({ lang: 'en-US', continuous: true, interimResults: true });
@@ -162,12 +169,34 @@ export default function GameScreen({ navigation }: Props) {
       setCleared(c => c + 1);
       setLastMatched(word.text);
       setTranscript('');
+
+      // 레이저 빔 발사: 캐릭터 캐논 → 단어 현재 위치
+      const areaH = gameAreaHRef.current;
+      const areaW = gamWRef.current;
+      // 단어 현재 Y 추정 (id에 spawn 타임스탬프 내장)
+      const spawnTime = parseInt(word.id.slice(1));
+      const elapsed = Date.now() - spawnTime;
+      const progress = Math.min(elapsed / word.duration, 1);
+      const wordY = -60 + (areaH + 120) * progress + 18; // 18 = 단어 박스 절반 높이 근사
+      const wordX = word.x + 55;                          // 55 = 단어 박스 평균 절반 너비 근사
+      // 캐릭터 캐논 위치: 게임 영역 하단 중앙, CHAR_HEIGHT 위
+      const charCX = areaW / 2;
+      const charCY = areaH - 10 - CHAR_HEIGHT;           // 캐논(머리 꼭대기) Y
+      setLaserBeams(beams => [
+        ...beams,
+        { id: `beam_${word.id}`, x1: charCX, y1: charCY, x2: wordX, y2: wordY },
+      ]);
+
       return prev.map((w, i) => i === idx ? { ...w, cleared: true } : w);
     });
   }, []);
 
   const handleClearDone = useCallback((id: string) => {
     setWords(prev => prev.filter(w => w.id !== id));
+  }, []);
+
+  const handleBeamDone = useCallback((id: string) => {
+    setLaserBeams(prev => prev.filter(b => b.id !== id));
   }, []);
 
   // 단어 생성 + 바닥 도달 타이머 설정
@@ -236,6 +265,14 @@ export default function GameScreen({ navigation }: Props) {
               onClearAnimationDone={handleClearDone}
             />
           ))}
+          {laserBeams.map(b => (
+            <LaserBeam key={b.id} {...b} onDone={handleBeamDone} />
+          ))}
+          <Character
+            x={gameW / 2}
+            bottom={10}
+            isListening={isListening}
+          />
         </View>
 
         <VoicePanel
