@@ -10,6 +10,8 @@ import LaserBeam, { BeamData } from '../components/LaserBeam';
 import { getRandomWord } from '../data/words';
 
 const SIDE_PANEL_W = 130; // VoicePanel 사이드바 너비 (가로 모드)
+// FallingWord 박스 높이 근사값: paddingVertical(12) + border(2) + fontSize(20) × lineHeight(1.3≈26) = 40
+const WORD_BOX_H = 40;
 
 function levenshtein(a: string, b: string): number {
   const m = a.length, n = b.length;
@@ -76,7 +78,7 @@ export default function GameScreen({ navigation }: Props) {
   const [transcript, setTranscript] = useState('');
   const [lastMatched, setLastMatched] = useState('');
   const [isListening, setIsListening] = useState(false);
-  const [gameAreaH, setGameAreaH] = useState(H);
+  const [gameAreaH, setGameAreaH] = useState(0); // onLayout 전까지 0
   const [laserBeams, setLaserBeams] = useState<BeamData[]>([]);
 
   const active = useRef(true);
@@ -85,7 +87,7 @@ export default function GameScreen({ navigation }: Props) {
   const livesRef = useRef(3);
   const wordsRef = useRef<WordItem[]>([]);
   const processedUpTo = useRef(0);
-  const gameAreaHRef = useRef(H);
+  const gameAreaHRef = useRef(0);
   const gamWRef = useRef(gameW);
   // 단어 id → setTimeout 타이머: GameScreen에서 직접 관리
   const wordTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
@@ -201,7 +203,7 @@ export default function GameScreen({ navigation }: Props) {
 
   // 단어 생성 + 바닥 도달 타이머 설정
   useEffect(() => {
-    if (!active.current) return;
+    if (!active.current || gameAreaH === 0) return; // onLayout 전에는 스폰 안 함
     const spawn = () => {
       if (!active.current || wordsRef.current.length >= 7) return;
       const existing = wordsRef.current.map(w => w.text);
@@ -210,14 +212,17 @@ export default function GameScreen({ navigation }: Props) {
       const duration = fallDuration(levelRef.current);
       const id = newId();
       setWords(prev => [...prev, { id, text, x, duration, cleared: false }]);
-      // GameScreen에서 직접 타이머 관리 → 컴포넌트 생명주기와 무관하게 동작
-      const timer = setTimeout(() => handleBottom(id), duration);
+      // translateY: -60 → areaH+60, word BOTTOM이 ground에 닿는 시점:
+      // translateY = areaH - WORD_BOX_H → time = duration × (areaH - WORD_BOX_H + 60) / (areaH + 120)
+      const areaH = gameAreaHRef.current;
+      const timeToGround = Math.round(duration * (areaH - WORD_BOX_H + 60) / (areaH + 120));
+      const timer = setTimeout(() => handleBottom(id), timeToGround);
       wordTimers.current.set(id, timer);
     };
     spawn();
     const t = setInterval(spawn, spawnInterval(level));
     return () => clearInterval(t);
-  }, [level, gameW]);
+  }, [level, gameW, gameAreaH]); // gameAreaH: onLayout 후 첫 스폰을 위해 포함
 
   // 최초 음성 인식 시작
   useEffect(() => {
@@ -246,7 +251,9 @@ export default function GameScreen({ navigation }: Props) {
         </View>
         <View style={styles.hearts}>
           {[0,1,2].map(i => (
-            <Text key={i} style={[styles.heart, i >= lives && styles.heartLost]}>♥</Text>
+            <Text key={i} style={[styles.heart, i >= lives && styles.heartLost]}>
+              {i >= lives ? '♡' : '♥'}
+            </Text>
           ))}
         </View>
       </View>
@@ -300,7 +307,7 @@ const styles = StyleSheet.create({
   scoreVal: { color: '#fff', fontSize: 24, fontWeight: '900', flex: 1, textAlign: 'center' },
   hearts: { flexDirection: 'row', gap: 4, minWidth: 60, justifyContent: 'flex-end' },
   heart: { fontSize: 20, color: '#ff4466' },
-  heartLost: { color: '#330011' },
+  heartLost: { color: '#553344', opacity: 0.35 },
   body: { flex: 1, flexDirection: 'row' },
   game: { flex: 1, position: 'relative', overflow: 'hidden' },
   ground: {
