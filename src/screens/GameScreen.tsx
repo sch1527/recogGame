@@ -7,7 +7,7 @@ import FallingWord, { WordItem } from '../components/FallingWord';
 import VoicePanel from '../components/VoicePanel';
 import Character, { CHAR_HEIGHT } from '../components/Character';
 import LaserBeam, { BeamData } from '../components/LaserBeam';
-import { getRandomWord } from '../data/words';
+import { getRandomWord, getStageInfo } from '../data/words';
 
 const SIDE_PANEL_W = 130; // VoicePanel 사이드바 너비 (가로 모드)
 // FallingWord 박스 높이 근사값: paddingVertical(12) + border(2) + fontSize(20) × lineHeight(1.3≈26) = 40
@@ -53,19 +53,28 @@ function isFuzzyMatch(target: string, spoken: string): boolean {
   return false;
 }
 
-type Props = { navigation: NativeStackNavigationProp<RootStackParamList, 'Game'> };
+import type { RouteProp } from '@react-navigation/native';
+import { unlockStage } from '../utils/unlocks';
+
+const WORDS_TO_CLEAR = 10;
+
+type Props = {
+  navigation: NativeStackNavigationProp<RootStackParamList, 'Game'>;
+  route: RouteProp<RootStackParamList, 'Game'>;
+};
 
 let uid = 0;
 function newId() { return `w${Date.now()}_${uid++}`; }
 
-function fallDuration(level: number) {
-  return Math.max(3000, 7500 - (level - 1) * 600 + (Math.random() - 0.5) * 1200);
+function fallDuration(stage: number) {
+  return Math.max(4000, 7500 - (stage - 1) * 1000 + (Math.random() - 0.5) * 1200);
 }
-function spawnInterval(level: number) {
-  return Math.max(1200, 3200 - (level - 1) * 300);
+function spawnInterval(stage: number) {
+  return Math.max(1500, 3000 - (stage - 1) * 500);
 }
 
-export default function GameScreen({ navigation }: Props) {
+export default function GameScreen({ navigation, route }: Props) {
+  const { stage } = route.params;
   const { width: W, height: H } = useWindowDimensions();
   const isLandscape = W > H;
   const gameW = isLandscape ? W - SIDE_PANEL_W : W;
@@ -73,7 +82,6 @@ export default function GameScreen({ navigation }: Props) {
   const [words, setWords] = useState<WordItem[]>([]);
   const [score, setScore] = useState(0);
   const [lives, setLives] = useState(3);
-  const [level, setLevel] = useState(1);
   const [cleared, setCleared] = useState(0);
   const [transcript, setTranscript] = useState('');
   const [lastMatched, setLastMatched] = useState('');
@@ -83,7 +91,7 @@ export default function GameScreen({ navigation }: Props) {
 
   const active = useRef(true);
   const scoreRef = useRef(0);
-  const levelRef = useRef(1);
+
   const livesRef = useRef(3);
   const wordsRef = useRef<WordItem[]>([]);
   const processedUpTo = useRef(0);
@@ -93,11 +101,21 @@ export default function GameScreen({ navigation }: Props) {
   const wordTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   useEffect(() => { scoreRef.current = score; }, [score]);
-  useEffect(() => { levelRef.current = level; }, [level]);
   useEffect(() => { wordsRef.current = words; }, [words]);
-  useEffect(() => { setLevel(Math.floor(cleared / 5) + 1); }, [cleared]);
   useEffect(() => { gameAreaHRef.current = gameAreaH; }, [gameAreaH]);
   useEffect(() => { gamWRef.current = gameW; }, [gameW]);
+
+  // 스테이지 클리어 감지
+  useEffect(() => {
+    if (cleared < WORDS_TO_CLEAR) return;
+    active.current = false;
+    ExpoSpeechRecognitionModule.stop();
+    wordTimers.current.forEach(t => clearTimeout(t));
+    wordTimers.current.clear();
+    unlockStage(stage + 1).then(() => {
+      navigation.replace('StageClear', { stage, score: scoreRef.current });
+    });
+  }, [cleared]);
 
   function startListen() {
     ExpoSpeechRecognitionModule.start({ lang: 'en-US', continuous: true, interimResults: true });
@@ -112,7 +130,7 @@ export default function GameScreen({ navigation }: Props) {
     if (livesRef.current <= 0) {
       active.current = false;
       ExpoSpeechRecognitionModule.stop();
-      navigation.replace('GameOver', { score: scoreRef.current });
+      navigation.replace('GameOver', { stage, score: scoreRef.current });
     }
   }, [navigation]);
 
@@ -166,7 +184,7 @@ export default function GameScreen({ navigation }: Props) {
         clearTimeout(timer);
         wordTimers.current.delete(word.id);
       }
-      const pts = word.text.length * 10 + levelRef.current * 5;
+      const pts = word.text.length * 10 + stage * 5;
       setScore(s => s + pts);
       setCleared(c => c + 1);
       setLastMatched(word.text);
@@ -207,9 +225,9 @@ export default function GameScreen({ navigation }: Props) {
     const spawn = () => {
       if (!active.current || wordsRef.current.length >= 7) return;
       const existing = wordsRef.current.map(w => w.text);
-      const text = getRandomWord(levelRef.current, existing);
+      const text = getRandomWord(stage, existing);
       const x = Math.random() * (gameW - 110) + 8;
-      const duration = fallDuration(levelRef.current);
+      const duration = fallDuration(stage);
       const id = newId();
       setWords(prev => [...prev, { id, text, x, duration, cleared: false }]);
       // translateY: -60 → areaH+60, word BOTTOM이 ground에 닿는 시점:
@@ -220,9 +238,9 @@ export default function GameScreen({ navigation }: Props) {
       wordTimers.current.set(id, timer);
     };
     spawn();
-    const t = setInterval(spawn, spawnInterval(level));
+    const t = setInterval(spawn, spawnInterval(stage));
     return () => clearInterval(t);
-  }, [level, gameW, gameAreaH]); // gameAreaH: onLayout 후 첫 스폰을 위해 포함
+  }, [stage, gameW, gameAreaH]); // gameAreaH: onLayout 후 첫 스폰을 위해 포함
 
   // 최초 음성 인식 시작
   useEffect(() => {
@@ -242,8 +260,12 @@ export default function GameScreen({ navigation }: Props) {
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <View style={styles.col}>
-          <Text style={styles.labelSm}>LEVEL</Text>
-          <Text style={styles.levelVal}>{level}</Text>
+          <Text style={styles.labelSm}>STAGE {getStageInfo(stage).emoji}</Text>
+          <Text style={styles.levelVal}>{getStageInfo(stage).label}</Text>
+        </View>
+        <View style={styles.col}>
+          <Text style={styles.labelSm}>진행</Text>
+          <Text style={styles.levelVal}>{cleared}/{WORDS_TO_CLEAR}</Text>
         </View>
         <View style={styles.col}>
           <Text style={styles.labelSm}>점수</Text>
@@ -303,7 +325,7 @@ const styles = StyleSheet.create({
   },
   col: { alignItems: 'center', minWidth: 60 },
   labelSm: { color: '#6666aa', fontSize: 10, letterSpacing: 1 },
-  levelVal: { color: '#aaaaff', fontSize: 20, fontWeight: 'bold' },
+  levelVal: { color: '#aaaaff', fontSize: 16, fontWeight: 'bold' },
   scoreVal: { color: '#fff', fontSize: 24, fontWeight: '900', flex: 1, textAlign: 'center' },
   hearts: { flexDirection: 'row', gap: 4, minWidth: 60, justifyContent: 'flex-end' },
   heart: { fontSize: 20, color: '#ff4466' },

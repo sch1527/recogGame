@@ -20,7 +20,7 @@ function getRank(score: number) {
 export default function GameOverScreen({ navigation, route }: Props) {
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
-  const { score } = route.params;
+  const { score, stage } = route.params;
   const scale = useRef(new Animated.Value(0)).current;
   const fade = useRef(new Animated.Value(0)).current;
   const rank = getRank(score);
@@ -46,11 +46,11 @@ export default function GameOverScreen({ navigation, route }: Props) {
           </Animated.View>
 
           <Animated.View style={[styles.btnsLand, { opacity: fade }]}>
-            <TouchableOpacity style={styles.retry} onPress={() => navigation.replace('Game')}>
+            <TouchableOpacity style={styles.retry} onPress={() => navigation.replace('Game', { stage })}>
               <Text style={styles.retryTxt}>다시 도전</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.home} onPress={() => navigation.navigate('Home')}>
-              <Text style={styles.homeTxt}>홈으로</Text>
+            <TouchableOpacity style={styles.home} onPress={() => navigation.navigate('StageSelect')}>
+              <Text style={styles.homeTxt}>스테이지 선택</Text>
             </TouchableOpacity>
           </Animated.View>
         </View>
@@ -69,11 +69,11 @@ export default function GameOverScreen({ navigation, route }: Props) {
       </Animated.View>
 
       <Animated.View style={[styles.btns, { opacity: fade }]}>
-        <TouchableOpacity style={styles.retry} onPress={() => navigation.replace('Game')}>
+        <TouchableOpacity style={styles.retry} onPress={() => navigation.replace('Game', { stage })}>
           <Text style={styles.retryTxt}>다시 도전</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.home} onPress={() => navigation.navigate('Home')}>
-          <Text style={styles.homeTxt}>홈으로</Text>
+        <TouchableOpacity style={styles.home} onPress={() => navigation.navigate('StageSelect')}>
+          <Text style={styles.homeTxt}>스테이지 선택</Text>
         </TouchableOpacity>
       </Animated.View>
     </SafeAreaView>

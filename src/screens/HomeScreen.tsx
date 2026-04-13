@@ -31,9 +31,9 @@ export default function HomeScreen({ navigation }: Props) {
             <View style={styles.infoLand}>
               <Text style={styles.infoTextLand}>🎤 단어가 떨어지기 전에 말하세요</Text>
               <Text style={styles.infoTextLand}>❤️ 라이프 3개</Text>
-              <Text style={styles.infoTextLand}>⬆️ 5단어마다 레벨업</Text>
+              <Text style={styles.infoTextLand}>🎯 10단어마다 스테이지 업</Text>
             </View>
-            <TouchableOpacity style={styles.btnLand} onPress={() => navigation.navigate('Game')}>
+            <TouchableOpacity style={styles.btnLand} onPress={() => navigation.navigate('StageSelect')}>
               <Text style={styles.btnTextLand}>게임 시작</Text>
             </TouchableOpacity>
           </View>
@@ -52,10 +52,10 @@ export default function HomeScreen({ navigation }: Props) {
         <View style={styles.info}>
           <Text style={styles.infoText}>🎤 단어가 떨어지기 전에 말하세요</Text>
           <Text style={styles.infoText}>❤️ 라이프 3개</Text>
-          <Text style={styles.infoText}>⬆️ 5단어마다 레벨업</Text>
+          <Text style={styles.infoText}>🎯 10단어마다 스테이지 업</Text>
         </View>
 
-        <TouchableOpacity style={styles.btn} onPress={() => navigation.navigate('Game')}>
+        <TouchableOpacity style={styles.btn} onPress={() => navigation.navigate('StageSelect')}>
           <Text style={styles.btnText}>게임 시작</Text>
         </TouchableOpacity>
       </Animated.View>

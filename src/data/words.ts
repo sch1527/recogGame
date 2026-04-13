@@ -1,33 +1,57 @@
-export const ENGLISH_WORDS = {
-  easy: [
-    'Apple', 'Banana', 'Pizza', 'Cookie', 'Milk', 'Jelly',
-    'run', 'eat', 'fly', 'hot', 'cold', 'old', 'new', 'day',
-    'night', 'tree', 'bird', 'fish', 'rain', 'snow', 'wind', 'fire',
-    'hand', 'face', 'eyes', 'nose', 'mouth', 'star', 'moon', 'book',
-  ],
-  medium: [
-    'apple', 'grape', 'bread', 'water', 'table', 'chair', 'phone',
-    'house', 'clock', 'music', 'movie', 'sport', 'dance', 'smile',
-    'happy', 'angry', 'brave', 'smart', 'funny', 'quiet',
-    'green', 'black', 'white', 'brown', 'orange', 'purple',
-    'cloud', 'river', 'ocean', 'desert', 'forest', 'garden',
-  ],
-  hard: [
-    'adventure', 'beautiful', 'chocolate', 'dangerous', 'education',
-    'fantastic', 'grateful', 'hospital', 'important', 'knowledge',
-    'language', 'mountain', 'notebook', 'opposite', 'possible',
-    'question', 'remember', 'shoulder', 'together', 'umbrella',
-    'vacation', 'wonderful', 'yesterday', 'computer', 'keyboard',
-  ],
+export type StageInfo = { label: string; emoji: string; words: string[] };
+
+export const STAGES: Record<number, StageInfo> = {
+  1: {
+    label: '음식',
+    emoji: '🍕',
+    words: [
+      'Apple', 'Banana', 'Pizza', 'Cookie', 'Milk', 'Bread',
+      'Rice', 'Cake', 'Soup', 'Egg', 'Corn', 'Jam',
+      'Tea', 'Juice', 'Meat', 'Bean', 'Fish', 'Taco',
+    ],
+  },
+  2: {
+    label: '동물',
+    emoji: '🐾',
+    words: [
+      'Dog', 'Cat', 'Bird', 'Bear', 'Lion', 'Wolf',
+      'Deer', 'Frog', 'Duck', 'Cow', 'Pig', 'Hen',
+      'Fox', 'Horse', 'Snake', 'Rabbit', 'Tiger', 'Shark',
+    ],
+  },
+  3: {
+    label: '탈것',
+    emoji: '🚗',
+    words: [
+      'Car', 'Bus', 'Train', 'Plane', 'Boat', 'Ship',
+      'Bike', 'Truck', 'Taxi', 'Rocket', 'Tram', 'Van',
+      'Jet', 'Subway', 'Ferry', 'Yacht', 'Scooter', 'Chopper',
+    ],
+  },
+  4: {
+    label: '색깔',
+    emoji: '🎨',
+    words: [
+      'Red', 'Blue', 'Green', 'Black', 'White', 'Pink',
+      'Brown', 'Gray', 'Orange', 'Purple', 'Yellow', 'Gold',
+      'Silver', 'Indigo', 'Violet', 'Teal', 'Cyan', 'Maroon',
+    ],
+  },
 };
 
-export function getWordPool(level: number): string[] {
-  if (level <= 2) return ENGLISH_WORDS.easy;
-  if (level <= 4) return [...ENGLISH_WORDS.easy, ...ENGLISH_WORDS.medium];
-  return [...ENGLISH_WORDS.easy, ...ENGLISH_WORDS.medium, ...ENGLISH_WORDS.hard];
+export const STAGE_COUNT = Object.keys(STAGES).length;
+
+export function getStageInfo(stage: number): StageInfo {
+  const clamped = Math.min(Math.max(stage, 1), STAGE_COUNT);
+  return STAGES[clamped];
 }
 
-export function getRandomWord(level: number, exclude: string[] = []): string {
-  const pool = getWordPool(level).filter(w => !exclude.includes(w));
+export function getWordPool(stage: number): string[] {
+  return getStageInfo(stage).words;
+}
+
+export function getRandomWord(stage: number, exclude: string[] = []): string {
+  const pool = getWordPool(stage).filter(w => !exclude.includes(w));
+  if (pool.length === 0) return getWordPool(stage)[0];
   return pool[Math.floor(Math.random() * pool.length)];
 }

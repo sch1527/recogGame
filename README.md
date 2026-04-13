@@ -6,20 +6,24 @@
 ## 게임 방법
 
 1. 앱을 실행하면 홈 화면이 나타납니다
-2. 게임 시작 버튼을 누르면 영어 단어들이 위에서 아래로 떨어집니다
-3. 단어를 보고 소리 내어 말하면 정답 처리되어 사라집니다
-4. 단어가 바닥에 닿으면 목숨(♥)이 1개 줄어듭니다
-5. 목숨 3개를 모두 잃으면 게임 오버
+2. 스테이지를 선택하고 시작 버튼을 누릅니다
+3. 단어들이 위에서 아래로 떨어집니다
+4. 단어를 보고 소리 내어 말하면 레이저가 발사되어 단어가 사라집니다
+5. 단어가 바닥에 닿으면 목숨(♥)이 1개 줄어듭니다
+6. 목숨 3개를 모두 잃으면 게임 오버
+7. 단어 10개를 맞추면 스테이지 클리어
 
-## 레벨 시스템
+## 스테이지 시스템
 
-| 레벨 | 단어 난이도 | 단어 속도 |
-|------|------------|----------|
-| 1~2  | 쉬운 단어 (run, bird, snow...) | 느림 |
-| 3~4  | 중간 단어 추가 (happy, ocean...) | 보통 |
-| 5+   | 어려운 단어 추가 (adventure, chocolate...) | 빠름 |
+| 스테이지 | 주제 | 단어 예시 |
+|---------|------|---------|
+| 1 - 음식 🍕 | 음식 | Apple, Pizza, Cookie... |
+| 2 - 동물 🐾 | 동물 | Dog, Lion, Rabbit... |
+| 3 - 탈것 🚗 | 탈것 | Car, Train, Rocket... |
+| 4 - 색깔 🎨 | 색깔 | Red, Blue, Purple... |
 
-단어 5개를 맞출 때마다 레벨이 올라갑니다.
+스테이지가 올라갈수록 단어 낙하 속도가 빨라집니다.  
+클리어한 스테이지는 잠금 해제되어 다음 스테이지를 선택할 수 있습니다.
 
 ## 음성 인식 매칭 방식
 
@@ -32,7 +36,7 @@
 ## 기술 스택
 
 - [Expo](https://expo.dev) (React Native)
-- [expo-speech-recognition](https://github.com/jamsch/expo-speech-recognition) - 음성 인식
+- [expo-speech-recognition](https://github.com/jamsch/expo-speech-recognition) - 음성 인식 (en-US)
 - [@react-navigation/native-stack](https://reactnavigation.org) - 화면 전환
 - [lottie-react-native](https://github.com/lottie-react-native/lottie-react-native) - 애니메이션
 - [react-native-reanimated](https://docs.swmansion.com/react-native-reanimated/) - 단어 낙하 애니메이션
@@ -42,14 +46,20 @@
 ```
 src/
 ├── screens/
-│   ├── HomeScreen.tsx      # 홈 화면
-│   ├── GameScreen.tsx      # 게임 화면 (음성 인식 + 단어 낙하)
-│   └── GameOverScreen.tsx  # 게임 오버 화면
+│   ├── HomeScreen.tsx          # 홈 화면
+│   ├── StageSelectScreen.tsx   # 스테이지 선택 화면
+│   ├── GameScreen.tsx          # 게임 화면 (음성 인식 + 단어 낙하)
+│   ├── StageClearScreen.tsx    # 스테이지 클리어 화면
+│   └── GameOverScreen.tsx      # 게임 오버 화면
 ├── components/
-│   ├── FallingWord.tsx     # 낙하하는 단어 컴포넌트
-│   └── VoicePanel.tsx      # 음성 인식 상태 표시 패널
-└── data/
-    └── words.ts            # 레벨별 단어 목록
+│   ├── FallingWord.tsx         # 낙하하는 단어 컴포넌트
+│   ├── Character.tsx           # 레이저 발사 캐릭터
+│   ├── LaserBeam.tsx           # 레이저 빔 애니메이션
+│   └── VoicePanel.tsx          # 음성 인식 상태 표시 패널
+├── data/
+│   └── words.ts                # 스테이지별 단어 목록
+└── utils/
+    └── unlocks.ts              # 스테이지 잠금 해제 관리
 ```
 
 ## 실행 방법
@@ -65,4 +75,5 @@ npm start
 npm run android
 ```
 
-> Android 기기 또는 에뮬레이터에서 마이크 권한을 허용해야 합니다.
+> Android 기기 또는 에뮬레이터에서 마이크 권한을 허용해야 합니다.  
+> `expo-speech-recognition`은 Expo Go를 지원하지 않으므로 EAS build 또는 custom dev client가 필요합니다.
