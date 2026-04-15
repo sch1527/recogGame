@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, useWindowDimensions } from 'react-native';
+import { useKeepAwake } from 'expo-keep-awake';
+import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, BackHandler, useWindowDimensions } from 'react-native';
+import SettingsModal from '../components/SettingsModal';
 import { ExpoSpeechRecognitionModule } from 'expo-speech-recognition';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../App';
@@ -43,9 +45,19 @@ function soundex(word: string): string {
   return code.padEnd(4, '0');
 }
 
+const NUM_TO_WORD: Record<string, string> = {
+  '0':'zero','1':'one','2':'two','3':'three','4':'four',
+  '5':'five','6':'six','7':'seven','8':'eight','9':'nine',
+};
+
+// 음성 인식이 숫자로 변환한 단어를 영어로 되돌림 (예: "3" → "three", "8" → "eight")
+function normalizeSpoken(text: string): string {
+  return text.replace(/\d+/g, n => NUM_TO_WORD[n] ?? n);
+}
+
 function isFuzzyMatch(target: string, spoken: string): boolean {
   const t = target.toLowerCase();
-  const s = spoken.toLowerCase();
+  const s = normalizeSpoken(spoken.toLowerCase());
   const allowedDist = Math.floor(t.length * 0.2);
   if (levenshtein(t, s) <= allowedDist) return true;
   if (soundex(t) === soundex(s)) return true;
@@ -55,8 +67,9 @@ function isFuzzyMatch(target: string, spoken: string): boolean {
 
 import type { RouteProp } from '@react-navigation/native';
 import { unlockStage } from '../utils/unlocks';
+import { useSettings } from '../context/SettingsContext';
 
-const WORDS_TO_CLEAR = 10;
+const WORDS_TO_CLEAR_BY_DIFF = { easy: 8, normal: 12, hard: 18 } as const;
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Game'>;
@@ -74,11 +87,16 @@ function spawnInterval(stage: number) {
 }
 
 export default function GameScreen({ navigation, route }: Props) {
+  useKeepAwake();
   const { stage } = route.params;
   const { width: W, height: H } = useWindowDimensions();
   const isLandscape = W > H;
   const gameW = isLandscape ? W - SIDE_PANEL_W : W;
 
+  const { difficulty } = useSettings();
+  const WORDS_TO_CLEAR = WORDS_TO_CLEAR_BY_DIFF[difficulty];
+
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [words, setWords] = useState<WordItem[]>([]);
   const [score, setScore] = useState(0);
   const [lives, setLives] = useState(3);
@@ -97,8 +115,14 @@ export default function GameScreen({ navigation, route }: Props) {
   const processedUpTo = useRef(0);
   const gameAreaHRef = useRef(0);
   const gamWRef = useRef(gameW);
-  // 단어 id → setTimeout 타이머: GameScreen에서 직접 관리
+  // 단어 id → setTimeout 타이머
   const wordTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  // 단어 id → 바닥 도달 절대 타임스탬프 (일시정지 후 재조정에 사용)
+  const wordDeadlines = useRef<Map<string, number>>(new Map());
+  // 일시정지 관련
+  const isPausedRef = useRef(false);   // 동기적으로 최신 상태 유지 (리스너 closure 방지)
+  const pauseStartRef = useRef<number | null>(null);
+  isPausedRef.current = settingsOpen;  // 매 렌더마다 동기 갱신
 
   useEffect(() => { scoreRef.current = score; }, [score]);
   useEffect(() => { wordsRef.current = words; }, [words]);
@@ -123,8 +147,10 @@ export default function GameScreen({ navigation, route }: Props) {
 
   const handleBottom = useCallback((id: string) => {
     wordTimers.current.delete(id);
+    wordDeadlines.current.delete(id);
     if (!active.current) return;
-    setWords(prev => prev.filter(w => w.id !== id));
+    // 즉시 제거 대신 missed 표시 → FallingWord가 오답 애니메이션 후 onClearAnimationDone 호출
+    setWords(prev => prev.map(w => w.id === id ? { ...w, missed: true } : w));
     livesRef.current -= 1;
     setLives(livesRef.current);
     if (livesRef.current <= 0) {
@@ -142,7 +168,7 @@ export default function GameScreen({ navigation, route }: Props) {
     });
     const s2 = mod.addListener('end', () => {
       setIsListening(false);
-      if (active.current) startListen();
+      if (active.current && !isPausedRef.current) startListen();
     });
     const s3 = mod.addListener('result', (e: any) => {
       const text = e.results?.[0]?.transcript?.trim() ?? '';
@@ -164,7 +190,7 @@ export default function GameScreen({ navigation, route }: Props) {
       }
     });
     const s4 = mod.addListener('error', () => {
-      if (active.current) setTimeout(startListen, 100);
+      if (active.current && !isPausedRef.current) setTimeout(startListen, 100);
     });
     return () => { s1.remove(); s2.remove(); s3.remove(); s4.remove(); };
   }, []);
@@ -174,7 +200,7 @@ export default function GameScreen({ navigation, route }: Props) {
       const now = Date.now();
       const candidates = prev
         .map((w, i) => ({ w, i, progress: (now - parseInt(w.id.slice(1))) / w.duration }))
-        .filter(({ w }) => !w.cleared && isFuzzyMatch(w.text, text));
+        .filter(({ w }) => !w.cleared && !w.missed && isFuzzyMatch(w.text, text));
       if (candidates.length === 0) return prev;
       const { w: word, i: idx } = candidates.reduce((a, b) => b.progress > a.progress ? b : a);
 
@@ -184,6 +210,7 @@ export default function GameScreen({ navigation, route }: Props) {
         clearTimeout(timer);
         wordTimers.current.delete(word.id);
       }
+      wordDeadlines.current.delete(word.id);
       const pts = word.text.length * 10 + stage * 5;
       setScore(s => s + pts);
       setCleared(c => c + 1);
@@ -221,7 +248,7 @@ export default function GameScreen({ navigation, route }: Props) {
 
   // 단어 생성 + 바닥 도달 타이머 설정
   useEffect(() => {
-    if (!active.current || gameAreaH === 0) return; // onLayout 전에는 스폰 안 함
+    if (!active.current || gameAreaH === 0 || settingsOpen) return; // 일시정지 중엔 스폰 안 함
     const spawn = () => {
       if (!active.current || wordsRef.current.length >= 7) return;
       const existing = wordsRef.current.map(w => w.text);
@@ -229,18 +256,70 @@ export default function GameScreen({ navigation, route }: Props) {
       const x = Math.random() * (gameW - 110) + 8;
       const duration = fallDuration(stage);
       const id = newId();
-      setWords(prev => [...prev, { id, text, x, duration, cleared: false }]);
+      setWords(prev => [...prev, { id, text, x, duration, cleared: false, missed: false }]);
       // translateY: -60 → areaH+60, word BOTTOM이 ground에 닿는 시점:
       // translateY = areaH - WORD_BOX_H → time = duration × (areaH - WORD_BOX_H + 60) / (areaH + 120)
       const areaH = gameAreaHRef.current;
       const timeToGround = Math.round(duration * (areaH - WORD_BOX_H + 60) / (areaH + 120));
+      const deadline = Date.now() + timeToGround;
+      wordDeadlines.current.set(id, deadline);
       const timer = setTimeout(() => handleBottom(id), timeToGround);
       wordTimers.current.set(id, timer);
     };
     spawn();
     const t = setInterval(spawn, spawnInterval(stage));
     return () => clearInterval(t);
-  }, [stage, gameW, gameAreaH]); // gameAreaH: onLayout 후 첫 스폰을 위해 포함
+  }, [stage, gameW, gameAreaH, settingsOpen]); // settingsOpen: 일시정지/재개 시 인터벌 재시작
+
+  // 일시정지 / 재개
+  useEffect(() => {
+    if (!active.current) return;
+
+    if (settingsOpen) {
+      // ── 일시정지 ──
+      pauseStartRef.current = Date.now();
+      ExpoSpeechRecognitionModule.stop();
+      wordTimers.current.forEach(t => clearTimeout(t));
+      wordTimers.current.clear();
+    } else if (pauseStartRef.current !== null) {
+      // ── 재개 (초기 렌더는 pauseStartRef가 null이라 건너뜀) ──
+      const pausedDuration = Date.now() - pauseStartRef.current;
+      pauseStartRef.current = null;
+
+      // 남은 시간을 pausedDuration만큼 연장해 타이머 재설정
+      wordsRef.current.filter(w => !w.cleared && !w.missed).forEach(w => {
+        const deadline = wordDeadlines.current.get(w.id);
+        if (deadline === undefined) return;
+        const newDeadline = deadline + pausedDuration;
+        wordDeadlines.current.set(w.id, newDeadline);
+        const remaining = Math.max(0, newDeadline - Date.now());
+        if (remaining === 0) { handleBottom(w.id); return; }
+        const timer = setTimeout(() => handleBottom(w.id), remaining);
+        wordTimers.current.set(w.id, timer);
+      });
+
+      startListen();
+    }
+  }, [settingsOpen]);
+
+  // Android 뒤로가기 → 설정창 토글
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (!active.current) return false; // 게임 종료 후엔 기본 동작
+      setSettingsOpen(prev => !prev);
+      return true; // 기본 뒤로가기 차단
+    });
+    return () => sub.remove();
+  }, []);
+
+  // 홈으로 이동 (설정창 버튼)
+  const handleGoHome = useCallback(() => {
+    active.current = false;
+    ExpoSpeechRecognitionModule.stop();
+    wordTimers.current.forEach(t => clearTimeout(t));
+    wordTimers.current.clear();
+    navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
+  }, [navigation]);
 
   // 최초 음성 인식 시작
   useEffect(() => {
@@ -259,17 +338,19 @@ export default function GameScreen({ navigation, route }: Props) {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <View style={styles.col}>
-          <Text style={styles.labelSm}>STAGE {getStageInfo(stage).emoji}</Text>
-          <Text style={styles.levelVal}>{getStageInfo(stage).label}</Text>
-        </View>
-        <View style={styles.col}>
-          <Text style={styles.labelSm}>진행</Text>
-          <Text style={styles.levelVal}>{cleared}/{WORDS_TO_CLEAR}</Text>
-        </View>
-        <View style={styles.col}>
-          <Text style={styles.labelSm}>점수</Text>
-          <Text style={styles.scoreVal}>{score}</Text>
+        <View style={styles.headerLeft}>
+          <View style={styles.col}>
+            <Text style={styles.labelSm}>STAGE {getStageInfo(stage).emoji}</Text>
+            <Text style={styles.levelVal}>{getStageInfo(stage).label}</Text>
+          </View>
+          <View style={styles.col}>
+            <Text style={styles.labelSm}>진행</Text>
+            <Text style={styles.levelVal}>{cleared}/{WORDS_TO_CLEAR}</Text>
+          </View>
+          <View style={styles.col}>
+            <Text style={styles.labelSm}>점수</Text>
+            <Text style={styles.scoreVal}>{score}</Text>
+          </View>
         </View>
         <View style={styles.hearts}>
           {[0,1,2].map(i => (
@@ -277,6 +358,9 @@ export default function GameScreen({ navigation, route }: Props) {
               {i >= lives ? '♡' : '♥'}
             </Text>
           ))}
+          <TouchableOpacity onPress={() => setSettingsOpen(true)} style={styles.gearBtn} hitSlop={8}>
+            <Text style={styles.gearIcon}>⚙</Text>
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -291,6 +375,7 @@ export default function GameScreen({ navigation, route }: Props) {
               key={w.id}
               word={w}
               screenHeight={gameAreaH}
+              paused={settingsOpen}
               onClearAnimationDone={handleClearDone}
             />
           ))}
@@ -311,6 +396,12 @@ export default function GameScreen({ navigation, route }: Props) {
           side={isLandscape}
         />
       </View>
+
+      <SettingsModal
+        visible={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        onGoHome={handleGoHome}
+      />
     </SafeAreaView>
   );
 }
@@ -323,11 +414,12 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,40,0.9)',
     borderBottomWidth: 1, borderBottomColor: 'rgba(100,100,255,0.3)',
   },
+  headerLeft: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 },
   col: { alignItems: 'center', minWidth: 60 },
   labelSm: { color: '#6666aa', fontSize: 10, letterSpacing: 1 },
   levelVal: { color: '#aaaaff', fontSize: 16, fontWeight: 'bold' },
-  scoreVal: { color: '#fff', fontSize: 24, fontWeight: '900', flex: 1, textAlign: 'center' },
-  hearts: { flexDirection: 'row', gap: 4, minWidth: 60, justifyContent: 'flex-end' },
+  scoreVal: { color: '#fff', fontSize: 24, fontWeight: '900', textAlign: 'center' },
+  hearts: { flexDirection: 'row', gap: 4, width: 84, justifyContent: 'flex-end' },
   heart: { fontSize: 20, color: '#ff4466' },
   heartLost: { color: '#553344', opacity: 0.35 },
   body: { flex: 1, flexDirection: 'row' },
@@ -336,4 +428,6 @@ const styles = StyleSheet.create({
     position: 'absolute', bottom: 0, left: 0, right: 0, height: 2,
     backgroundColor: '#ff2244', opacity: 0.6,
   },
+  gearBtn: { marginLeft: 6, padding: 2 },
+  gearIcon: { fontSize: 18, color: '#6666aa' },
 });

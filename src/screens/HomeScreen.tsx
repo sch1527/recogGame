@@ -1,8 +1,9 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Animated, SafeAreaView, useWindowDimensions } from 'react-native';
 import LottieView from 'lottie-react-native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../App';
+import SettingsModal from '../components/SettingsModal';
 
 type Props = { navigation: NativeStackNavigationProp<RootStackParamList, 'Home'> };
 
@@ -10,6 +11,7 @@ export default function HomeScreen({ navigation }: Props) {
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
   const fadeIn = useRef(new Animated.Value(0)).current;
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   useEffect(() => {
     Animated.timing(fadeIn, { toValue: 1, duration: 700, useNativeDriver: true }).start();
@@ -18,6 +20,10 @@ export default function HomeScreen({ navigation }: Props) {
   if (isLandscape) {
     return (
       <SafeAreaView style={styles.container}>
+        <TouchableOpacity style={styles.gearBtn} onPress={() => setSettingsOpen(true)}>
+          <Text style={styles.gearIcon}>⚙</Text>
+        </TouchableOpacity>
+
         <Animated.View style={[styles.contentLand, { opacity: fadeIn }]}>
           {/* 왼쪽: 타이틀 */}
           <View style={styles.leftPane}>
@@ -38,12 +44,18 @@ export default function HomeScreen({ navigation }: Props) {
             </TouchableOpacity>
           </View>
         </Animated.View>
+
+        <SettingsModal visible={settingsOpen} onClose={() => setSettingsOpen(false)} showDifficulty />
       </SafeAreaView>
     );
   }
 
   return (
     <SafeAreaView style={styles.container}>
+      <TouchableOpacity style={styles.gearBtn} onPress={() => setSettingsOpen(true)}>
+        <Text style={styles.gearIcon}>⚙</Text>
+      </TouchableOpacity>
+
       <Animated.View style={[styles.content, { opacity: fadeIn }]}>
         <LottieView source={require('../../assets/Welcome.json')} autoPlay loop style={styles.lottie} />
         <Text style={styles.title}>산성비</Text>
@@ -59,6 +71,8 @@ export default function HomeScreen({ navigation }: Props) {
           <Text style={styles.btnText}>게임 시작</Text>
         </TouchableOpacity>
       </Animated.View>
+
+      <SettingsModal visible={settingsOpen} onClose={() => setSettingsOpen(false)} showDifficulty />
     </SafeAreaView>
   );
 }
@@ -115,4 +129,10 @@ const styles = StyleSheet.create({
     shadowColor: '#4466ff', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.6, shadowRadius: 16,
   },
   btnTextLand: { color: '#fff', fontSize: 18, fontWeight: 'bold', letterSpacing: 2 },
+
+  gearBtn: {
+    position: 'absolute', top: 12, right: 16, zIndex: 10,
+    padding: 8,
+  },
+  gearIcon: { fontSize: 24, color: '#6666aa' },
 });
