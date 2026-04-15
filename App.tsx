@@ -7,6 +7,7 @@ import StageSelectScreen from './src/screens/StageSelectScreen';
 import GameScreen from './src/screens/GameScreen';
 import StageClearScreen from './src/screens/StageClearScreen';
 import GameOverScreen from './src/screens/GameOverScreen';
+import { SettingsProvider } from './src/context/SettingsContext';
 
 export type RootStackParamList = {
   Home: undefined;
@@ -20,6 +21,7 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export default function App() {
   return (
+    <SettingsProvider>
     <NavigationContainer>
       <StatusBar style="light" hidden={true} />
       <Stack.Navigator
@@ -36,5 +38,6 @@ export default function App() {
         <Stack.Screen name="GameOver" component={GameOverScreen} />
       </Stack.Navigator>
     </NavigationContainer>
+    </SettingsProvider>
   );
 }
