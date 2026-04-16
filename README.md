@@ -11,7 +11,7 @@
 4. 단어를 보고 소리 내어 말하면 레이저가 발사되어 단어가 사라집니다
 5. 단어가 바닥에 닿으면 목숨(♥)이 1개 줄어듭니다
 6. 목숨 3개를 모두 잃으면 게임 오버
-7. 단어 10개를 맞추면 스테이지 클리어
+7. 난이도에 따라 지정된 수의 단어를 맞추면 스테이지 클리어
 
 ## 스테이지 시스템
 
@@ -24,6 +24,16 @@
 
 스테이지가 올라갈수록 단어 낙하 속도가 빨라집니다.  
 클리어한 스테이지는 잠금 해제되어 다음 스테이지를 선택할 수 있습니다.
+
+## 난이도 설정
+
+설정 모달에서 난이도를 선택할 수 있으며, 선택한 난이도는 앱을 종료해도 유지됩니다.
+
+| 난이도 | 클리어 조건 | 낙하 속도 |
+|--------|-----------|---------|
+| Easy   | 단어 8개  | 느림    |
+| Normal | 단어 12개 | 보통    |
+| Hard   | 단어 18개 | 빠름    |
 
 ## 음성 인식 매칭 방식
 
@@ -40,6 +50,8 @@
 - [@react-navigation/native-stack](https://reactnavigation.org) - 화면 전환
 - [lottie-react-native](https://github.com/lottie-react-native/lottie-react-native) - 애니메이션
 - [react-native-reanimated](https://docs.swmansion.com/react-native-reanimated/) - 단어 낙하 애니메이션
+- [@react-native-async-storage/async-storage](https://react-native-async-storage.github.io/async-storage/) - 설정 영구 저장
+- [expo-keep-awake](https://docs.expo.dev/versions/latest/sdk/keep-awake/) - 게임 중 화면 꺼짐 방지
 
 ## 프로젝트 구조
 
@@ -55,7 +67,10 @@ src/
 │   ├── FallingWord.tsx         # 낙하하는 단어 컴포넌트
 │   ├── Character.tsx           # 레이저 발사 캐릭터
 │   ├── LaserBeam.tsx           # 레이저 빔 애니메이션
-│   └── VoicePanel.tsx          # 음성 인식 상태 표시 패널
+│   ├── VoicePanel.tsx          # 음성 인식 상태 표시 패널
+│   └── SettingsModal.tsx       # 설정 모달 (볼륨 슬라이더, 난이도 선택)
+├── context/
+│   └── SettingsContext.tsx     # 볼륨·난이도 전역 상태 및 AsyncStorage 저장
 ├── data/
 │   └── words.ts                # 스테이지별 단어 목록
 └── utils/
