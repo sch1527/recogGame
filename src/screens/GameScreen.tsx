@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useKeepAwake } from 'expo-keep-awake';
-import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, BackHandler, useWindowDimensions } from 'react-native';
+import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, BackHandler, Animated, useWindowDimensions } from 'react-native';
 import SettingsModal from '../components/SettingsModal';
 import { ExpoSpeechRecognitionModule } from 'expo-speech-recognition';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -79,6 +79,42 @@ type Props = {
 let uid = 0;
 function newId() { return `w${Date.now()}_${uid++}`; }
 
+function CountdownOverlay({ value }: { value: number }) {
+  const scale = useRef(new Animated.Value(1.6)).current;
+  const opacity = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(scale,   { toValue: 1,   duration: 700, useNativeDriver: true }),
+      Animated.sequence([
+        Animated.timing(opacity, { toValue: 1, duration: 150, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 0, duration: 550, delay: 200, useNativeDriver: true }),
+      ]),
+    ]).start();
+  }, []);
+
+  return (
+    <Animated.View style={[cdStyles.wrap, { opacity }]}>
+      <Animated.Text style={[cdStyles.num, { transform: [{ scale }] }]}>
+        {value}
+      </Animated.Text>
+    </Animated.View>
+  );
+}
+
+const cdStyles = StyleSheet.create({
+  wrap: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    justifyContent: 'center', alignItems: 'center',
+    backgroundColor: 'rgba(0,0,30,0.45)',
+  },
+  num: {
+    fontSize: 130, fontWeight: '900', color: '#fff',
+    textShadowColor: '#4466ff', textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 40,
+  },
+});
+
 function fallDuration(stage: number) {
   return Math.max(4000, 7500 - (stage - 1) * 1000 + (Math.random() - 0.5) * 1200);
 }
@@ -97,6 +133,8 @@ export default function GameScreen({ navigation, route }: Props) {
   const WORDS_TO_CLEAR = WORDS_TO_CLEAR_BY_DIFF[difficulty];
 
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [countdown, setCountdown] = useState<number | null>(null);
+  const isGamePaused = settingsOpen || countdown !== null;
   const [words, setWords] = useState<WordItem[]>([]);
   const [score, setScore] = useState(0);
   const [lives, setLives] = useState(3);
@@ -119,10 +157,13 @@ export default function GameScreen({ navigation, route }: Props) {
   const wordTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   // 단어 id → 바닥 도달 절대 타임스탬프 (일시정지 후 재조정에 사용)
   const wordDeadlines = useRef<Map<string, number>>(new Map());
+  // 단어 id → 일시정지 시점의 실제 translateY 값 (FallingWord에서 콜백으로 전달)
+  const wordPausedYs = useRef<Map<string, number>>(new Map());
   // 일시정지 관련
   const isPausedRef = useRef(false);   // 동기적으로 최신 상태 유지 (리스너 closure 방지)
   const pauseStartRef = useRef<number | null>(null);
-  isPausedRef.current = settingsOpen;  // 매 렌더마다 동기 갱신
+  const wasGamePausedRef = useRef(false); // 직전 렌더에서 isGamePaused 값 (spawn 재개 감지)
+  isPausedRef.current = isGamePaused;  // 매 렌더마다 동기 갱신
 
   useEffect(() => { scoreRef.current = score; }, [score]);
   useEffect(() => { wordsRef.current = words; }, [words]);
@@ -147,8 +188,11 @@ export default function GameScreen({ navigation, route }: Props) {
 
   const handleBottom = useCallback((id: string) => {
     wordTimers.current.delete(id);
-    wordDeadlines.current.delete(id);
     if (!active.current) return;
+    // 일시정지 중 타이머가 발화된 경우(race condition) → 무시
+    // wordDeadlines는 남겨두어 카운트다운 종료 시 재스케줄링에 사용
+    if (isPausedRef.current) return;
+    wordDeadlines.current.delete(id);
     // 즉시 제거 대신 missed 표시 → FallingWord가 오답 애니메이션 후 onClearAnimationDone 호출
     setWords(prev => prev.map(w => w.id === id ? { ...w, missed: true } : w));
     livesRef.current -= 1;
@@ -199,7 +243,7 @@ export default function GameScreen({ navigation, route }: Props) {
     setWords(prev => {
       const now = Date.now();
       const candidates = prev
-        .map((w, i) => ({ w, i, progress: (now - parseInt(w.id.slice(1))) / w.duration }))
+        .map((w, i) => ({ w, i, progress: (now - parseInt(w.id.slice(1)) - w.pausedMs) / w.duration }))
         .filter(({ w }) => !w.cleared && !w.missed && isFuzzyMatch(w.text, text));
       if (candidates.length === 0) return prev;
       const { w: word, i: idx } = candidates.reduce((a, b) => b.progress > a.progress ? b : a);
@@ -222,8 +266,8 @@ export default function GameScreen({ navigation, route }: Props) {
       const areaW = gamWRef.current;
       // 단어 현재 Y 추정 (id에 spawn 타임스탬프 내장)
       const spawnTime = parseInt(word.id.slice(1));
-      const elapsed = Date.now() - spawnTime;
-      const progress = Math.min(elapsed / word.duration, 1);
+      const elapsed = Date.now() - spawnTime - word.pausedMs;
+      const progress = Math.min(Math.max(elapsed / word.duration, 0), 1);
       const wordY = -60 + (areaH + 120) * progress + 18; // 18 = 단어 박스 절반 높이 근사
       const wordX = word.x + 55;                          // 55 = 단어 박스 평균 절반 너비 근사
       // 캐릭터 캐논 위치: 게임 영역 하단 중앙, CHAR_HEIGHT 위
@@ -246,9 +290,29 @@ export default function GameScreen({ navigation, route }: Props) {
     setLaserBeams(prev => prev.filter(b => b.id !== id));
   }, []);
 
+  // FallingWord가 일시정지될 때 실제 translateY를 수집
+  const handleWordPaused = useCallback((id: string, y: number) => {
+    wordPausedYs.current.set(id, y);
+  }, []);
+
+  // 일시정지: useEffect가 아닌 함수로 동기 처리 (race condition 방지)
+  // isPausedRef.current를 렌더 전에 즉시 true로 설정해 타이머 race window 제거
+  const pauseGame = useCallback(() => {
+    if (!active.current || settingsOpen) return;
+    if (pauseStartRef.current === null) pauseStartRef.current = Date.now();
+    isPausedRef.current = true; // 렌더 전 즉시 설정 → handleBottom race 방지
+    setCountdown(null);
+    ExpoSpeechRecognitionModule.stop();
+    wordTimers.current.forEach(t => clearTimeout(t));
+    wordTimers.current.clear();
+    setSettingsOpen(true);
+  }, [settingsOpen]);
+
   // 단어 생성 + 바닥 도달 타이머 설정
   useEffect(() => {
-    if (!active.current || gameAreaH === 0 || settingsOpen) return; // 일시정지 중엔 스폰 안 함
+    const resumingFromPause = wasGamePausedRef.current && !isGamePaused;
+    wasGamePausedRef.current = isGamePaused;
+    if (!active.current || gameAreaH === 0 || isGamePaused) return; // 일시정지 중엔 스폰 안 함
     const spawn = () => {
       if (!active.current || wordsRef.current.length >= 7) return;
       const existing = wordsRef.current.map(w => w.text);
@@ -256,7 +320,7 @@ export default function GameScreen({ navigation, route }: Props) {
       const x = Math.random() * (gameW - 110) + 8;
       const duration = fallDuration(stage);
       const id = newId();
-      setWords(prev => [...prev, { id, text, x, duration, cleared: false, missed: false }]);
+      setWords(prev => [...prev, { id, text, x, duration, cleared: false, missed: false, pausedMs: 0 }]);
       // translateY: -60 → areaH+60, word BOTTOM이 ground에 닿는 시점:
       // translateY = areaH - WORD_BOX_H → time = duration × (areaH - WORD_BOX_H + 60) / (areaH + 120)
       const areaH = gameAreaHRef.current;
@@ -266,48 +330,81 @@ export default function GameScreen({ navigation, route }: Props) {
       const timer = setTimeout(() => handleBottom(id), timeToGround);
       wordTimers.current.set(id, timer);
     };
-    spawn();
+    if (!resumingFromPause) spawn(); // 재개 시 즉시 spawn 건너뜀 (중복 방지)
     const t = setInterval(spawn, spawnInterval(stage));
     return () => clearInterval(t);
-  }, [stage, gameW, gameAreaH, settingsOpen]); // settingsOpen: 일시정지/재개 시 인터벌 재시작
+  }, [stage, gameW, gameAreaH, isGamePaused]);
 
-  // 일시정지 / 재개
+  // 카운트다운: 3→2→1→0 후 재개
   useEffect(() => {
-    if (!active.current) return;
+    if (countdown === null) return;
 
-    if (settingsOpen) {
-      // ── 일시정지 ──
-      pauseStartRef.current = Date.now();
-      ExpoSpeechRecognitionModule.stop();
-      wordTimers.current.forEach(t => clearTimeout(t));
-      wordTimers.current.clear();
-    } else if (pauseStartRef.current !== null) {
-      // ── 재개 (초기 렌더는 pauseStartRef가 null이라 건너뜀) ──
-      const pausedDuration = Date.now() - pauseStartRef.current;
-      pauseStartRef.current = null;
-
-      // 남은 시간을 pausedDuration만큼 연장해 타이머 재설정
-      wordsRef.current.filter(w => !w.cleared && !w.missed).forEach(w => {
-        const deadline = wordDeadlines.current.get(w.id);
-        if (deadline === undefined) return;
-        const newDeadline = deadline + pausedDuration;
-        wordDeadlines.current.set(w.id, newDeadline);
-        const remaining = Math.max(0, newDeadline - Date.now());
-        if (remaining === 0) { handleBottom(w.id); return; }
-        const timer = setTimeout(() => handleBottom(w.id), remaining);
-        wordTimers.current.set(w.id, timer);
-      });
-
-      startListen();
+    if (countdown > 0) {
+      const t = setTimeout(() => setCountdown(c => (c ?? 1) - 1), 1000);
+      return () => clearTimeout(t);
     }
-  }, [settingsOpen]);
+
+    // countdown === 0 → 실제 재개
+    if (!active.current || pauseStartRef.current === null) { setCountdown(null); return; }
+    const T_pause = pauseStartRef.current; // 일시정지 시작 시각 (누적 오차 없이 직접 계산에 사용)
+    const pausedDuration = Date.now() - T_pause;
+    pauseStartRef.current = null;
+
+    // isPausedRef를 즉시 해제: handleBottom이 이 이후부터 정상 동작
+    isPausedRef.current = false;
+
+    // 위치 기반으로 t_to_ground 계산:
+    // FallingWord에서 onPaused 콜백으로 받은 실제 translateY(pausedY)를 사용.
+    // 시간 역산 방식(T_elapsed_anim)보다 rAF 프레임 오차(최대 16ms×누적)가 없어 정확함.
+    // RESUME_ANIM_BUFFER: setCountdown(null) 후 렌더 2회가 완료되어야 애니메이션이 재개되므로
+    //   그 지연(δ_resume) 동안 타이머가 먼저 발화하지 않도록 보정
+    const RESUME_ANIM_BUFFER = 120; // ms
+    const areaH = gameAreaHRef.current;
+    const speed = 1 / (areaH + 120); // px per ms (duration 곱하면 실제 속도)
+    wordsRef.current.filter(w => !w.cleared && !w.missed).forEach(w => {
+      const fromY = wordPausedYs.current.get(w.id) ?? (() => {
+        // fallback: 시간 기반 추정 (onPaused 콜백이 아직 안 온 경우)
+        const T_elapsed_anim = T_pause - parseInt(w.id.slice(1)) - w.pausedMs;
+        return -60 + (areaH + 120) * T_elapsed_anim / w.duration;
+      })();
+      // 단어 하단이 ground에 닿을 때까지 남은 거리 → 시간으로 변환
+      const distToGround = Math.max(0, (areaH - WORD_BOX_H) - fromY);
+      const t_to_ground = distToGround * w.duration * speed; // = distToGround / (areaH+120) * duration
+      wordDeadlines.current.set(w.id, Date.now() + t_to_ground);
+      wordTimers.current.set(w.id, setTimeout(() => handleBottom(w.id), t_to_ground + RESUME_ANIM_BUFFER));
+    });
+    wordPausedYs.current.clear();
+
+    setWords(prev => prev.map(w =>
+      !w.cleared && !w.missed ? { ...w, pausedMs: w.pausedMs + pausedDuration } : w
+    ));
+
+    startListen();
+    setCountdown(null);
+  }, [countdown]);
+
+  // 설정창 닫기: setSettingsOpen(false) + setCountdown(3)을 같은 핸들러에서 호출해
+  // React 18 배칭으로 isGamePaused가 false로 떨어지는 순간 없이 카운트다운 진입
+  const handleCloseSettings = useCallback(() => {
+    if (pauseStartRef.current !== null) setCountdown(3);
+    setSettingsOpen(false);
+  }, []);
+  const handleCloseSettingsRef = useRef(handleCloseSettings);
+  handleCloseSettingsRef.current = handleCloseSettings;
+
+  const settingsOpenRef = useRef(settingsOpen);
+  settingsOpenRef.current = settingsOpen;
 
   // Android 뒤로가기 → 설정창 토글
   useEffect(() => {
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
-      if (!active.current) return false; // 게임 종료 후엔 기본 동작
-      setSettingsOpen(prev => !prev);
-      return true; // 기본 뒤로가기 차단
+      if (!active.current) return false;
+      if (settingsOpenRef.current) {
+        handleCloseSettingsRef.current();
+      } else {
+        pauseGame();
+      }
+      return true;
     });
     return () => sub.remove();
   }, []);
@@ -358,7 +455,7 @@ export default function GameScreen({ navigation, route }: Props) {
               {i >= lives ? '♡' : '♥'}
             </Text>
           ))}
-          <TouchableOpacity onPress={() => setSettingsOpen(true)} style={styles.gearBtn} hitSlop={8}>
+          <TouchableOpacity onPress={pauseGame} style={styles.gearBtn} hitSlop={8}>
             <Text style={styles.gearIcon}>⚙</Text>
           </TouchableOpacity>
         </View>
@@ -375,8 +472,9 @@ export default function GameScreen({ navigation, route }: Props) {
               key={w.id}
               word={w}
               screenHeight={gameAreaH}
-              paused={settingsOpen}
+              paused={isGamePaused}
               onClearAnimationDone={handleClearDone}
+              onPaused={handleWordPaused}
             />
           ))}
           {laserBeams.map(b => (
@@ -387,6 +485,10 @@ export default function GameScreen({ navigation, route }: Props) {
             bottom={10}
             isListening={isListening}
           />
+          {/* 카운트다운 오버레이 */}
+          {countdown !== null && countdown > 0 && (
+            <CountdownOverlay key={countdown} value={countdown} />
+          )}
         </View>
 
         <VoicePanel
@@ -399,7 +501,7 @@ export default function GameScreen({ navigation, route }: Props) {
 
       <SettingsModal
         visible={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
+        onClose={handleCloseSettings}
         onGoHome={handleGoHome}
       />
     </SafeAreaView>
