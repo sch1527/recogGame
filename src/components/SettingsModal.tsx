@@ -22,11 +22,15 @@ const THUMB_R = 10;
 
 // ── 볼륨 슬라이더 ─────────────────────────────────────────────
 
-function VolumeSlider() {
-  const { volume, setVolume } = useSettings();
+interface SliderProps {
+  label: string;
+  value: number;
+  onChange: (v: number) => void;
+}
 
-  const setVolumeRef = useRef(setVolume);
-  setVolumeRef.current = setVolume;
+function VolumeSlider({ label, value, onChange }: SliderProps) {
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
 
   const trackW = useRef(0);
   const startTouchX = useRef(0);
@@ -42,10 +46,10 @@ function VolumeSlider() {
       onMoveShouldSetPanResponder: () => true,
       onPanResponderGrant: e => {
         startTouchX.current = e.nativeEvent.locationX;
-        setVolumeRef.current(clampVol(e.nativeEvent.locationX));
+        onChangeRef.current(clampVol(e.nativeEvent.locationX));
       },
       onPanResponderMove: (_e, gs) => {
-        setVolumeRef.current(clampVol(startTouchX.current + gs.dx));
+        onChangeRef.current(clampVol(startTouchX.current + gs.dx));
       },
     })
   ).current;
@@ -55,30 +59,35 @@ function VolumeSlider() {
   };
 
   return (
-    <View style={slStyles.row}>
-      <TouchableOpacity
-        onPress={() => setVolumeRef.current(volume > 0 ? 0 : 75)}
-        hitSlop={10}
-        style={slStyles.muteBtn}
-      >
-        <Text style={slStyles.muteIcon}>{volume === 0 ? '🔇' : '🔊'}</Text>
-      </TouchableOpacity>
-
-      <View style={slStyles.trackArea} onLayout={onLayout} {...panResponder.panHandlers}>
-        <View style={slStyles.track} />
-        <View style={[slStyles.fill, { width: `${volume}%` as any }]} />
-        <View style={[slStyles.thumb, { left: `${volume}%` as any, marginLeft: -THUMB_R }]} />
+    <View style={slStyles.sliderBlock}>
+      <View style={slStyles.sliderLabelRow}>
+        <Text style={slStyles.sliderLabel}>{label}</Text>
+        <TouchableOpacity
+          onPress={() => onChangeRef.current(value > 0 ? 0 : 75)}
+          hitSlop={10}
+        >
+          <Text style={slStyles.muteIcon}>{value === 0 ? '🔇' : '🔊'}</Text>
+        </TouchableOpacity>
       </View>
-
-      <Text style={slStyles.pct}>{volume}%</Text>
+      <View style={slStyles.row}>
+        <View style={slStyles.trackArea} onLayout={onLayout} {...panResponder.panHandlers}>
+          <View style={slStyles.track} />
+          <View style={[slStyles.fill, { width: `${value}%` as any }]} />
+          <View style={[slStyles.thumb, { left: `${value}%` as any, marginLeft: -THUMB_R }]} pointerEvents="none" />
+        </View>
+        <Text style={slStyles.pct}>{value}%</Text>
+      </View>
     </View>
   );
 }
 
 const slStyles = StyleSheet.create({
+  sliderBlock: { marginBottom: 12 },
+  sliderLabelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
+  sliderLabel: { color: '#8888cc', fontSize: 12 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   muteBtn: { paddingVertical: 4 },
-  muteIcon: { fontSize: 22 },
+  muteIcon: { fontSize: 18 },
   trackArea: { flex: 1, height: 28, justifyContent: 'center' },
   track: {
     position: 'absolute', left: 0, right: 0, height: 4,
@@ -101,7 +110,7 @@ const slStyles = StyleSheet.create({
 // ── 메인 설정 패널 ────────────────────────────────────────────
 
 export default function SettingsModal({ visible, onClose, showDifficulty = false, onGoHome }: Props) {
-  const { difficulty, setDifficulty } = useSettings();
+  const { bgmVolume, sfxVolume, setBgmVolume, setSfxVolume, difficulty, setDifficulty } = useSettings();
   const opacity = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -132,7 +141,8 @@ export default function SettingsModal({ visible, onClose, showDifficulty = false
         {/* 볼륨 */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>볼륨</Text>
-          <VolumeSlider />
+          <VolumeSlider label="배경음" value={bgmVolume} onChange={setBgmVolume} />
+          <VolumeSlider label="효과음" value={sfxVolume} onChange={setSfxVolume} />
         </View>
 
         {/* 난이도 */}
@@ -155,8 +165,8 @@ export default function SettingsModal({ visible, onClose, showDifficulty = false
               })}
             </View>
             <Text style={styles.diffHint}>
-              {difficulty === 'easy' ? '클리어 단어 8개' :
-               difficulty === 'hard' ? '클리어 단어 18개' : '클리어 단어 12개'}
+              {difficulty === 'easy' ? '클리어 단어 6개' :
+               difficulty === 'hard' ? '클리어 단어 8개' : '클리어 단어 10개'}
             </Text>
           </View>
         )}

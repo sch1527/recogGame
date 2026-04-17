@@ -5,36 +5,28 @@ export const STAGES: Record<number, StageInfo> = {
     label: '음식',
     emoji: '🍕',
     words: [
-      'Apple', 'Banana', 'Pizza', 'Cookie', 'Milk', 'Bread',
-      'Rice', 'Cake', 'Soup', 'Egg', 'Corn', 'Jam',
-      'Tea', 'Juice', 'Meat', 'Bean', 'Fish', 'Taco',
+      'Apple', 'Banana', 'Pizza', 'Cookie', 'Milk', 'Jelly',
     ],
   },
   2: {
     label: '동물',
     emoji: '🐾',
     words: [
-      'Dog', 'Cat', 'Bird', 'Bear', 'Lion', 'Wolf',
-      'Deer', 'Frog', 'Duck', 'Cow', 'Pig', 'Hen',
-      'Fox', 'Horse', 'Snake', 'Rabbit', 'Tiger', 'Shark',
+      'Lion', 'Tiger', 'Monkey', 'Zebra', 'Hippo', 'Snake',
     ],
   },
   3: {
     label: '탈것',
     emoji: '🚗',
     words: [
-      'Car', 'Bus', 'Train', 'Plane', 'Boat', 'Ship',
-      'Bike', 'Truck', 'Taxi', 'Rocket', 'Tram', 'Van',
-      'Jet', 'Subway', 'Ferry', 'Yacht', 'Scooter', 'Chopper',
+      'Car', 'Bus', 'Train', 'Plane', 'Bike', 'Boat',
     ],
   },
   4: {
     label: '색깔',
     emoji: '🎨',
     words: [
-      'Red', 'Blue', 'Green', 'Black', 'White', 'Pink',
-      'Brown', 'Gray', 'Orange', 'Purple', 'Yellow', 'Gold',
-      'Silver', 'Indigo', 'Violet', 'Teal', 'Cyan', 'Maroon',
+      'Red', 'Blue', 'Yellow', 'Green', 'Pink', 'White',
     ],
   },
 };

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { Animated, Text, StyleSheet } from 'react-native';
+import { Animated, Easing, Text, StyleSheet } from 'react-native';
 
 export interface WordItem {
   id: string;
@@ -9,6 +9,7 @@ export interface WordItem {
   cleared: boolean;
   missed: boolean;
   pausedMs: number; // 이 단어가 정지된 총 시간 (레이저 위치 계산에 사용)
+  startY: number;   // 애니메이션 시작 translateY (화면 위 음수 가능)
 }
 
 interface Props {
@@ -16,19 +17,20 @@ interface Props {
   screenHeight: number;
   paused?: boolean;
   onClearAnimationDone: (id: string) => void;
-  onPaused?: (id: string, y: number) => void; // 실제 멈춘 Y값 전달
+  onPaused?: (id: string, y: number) => void;   // 실제 멈춘 Y값 전달
+  onResumed?: (id: string) => void;              // 애니메이션이 실제로 재개된 시점 전달
 }
 
-export default function FallingWord({ word, screenHeight, paused = false, onClearAnimationDone, onPaused }: Props) {
-  const translateY = useRef(new Animated.Value(-60)).current;
+export default function FallingWord({ word, screenHeight, paused = false, onClearAnimationDone, onPaused, onResumed }: Props) {
+  const translateY = useRef(new Animated.Value(word.startY)).current;
   const translateX = useRef(new Animated.Value(0)).current;
   const opacity    = useRef(new Animated.Value(1)).current;
   const scale      = useRef(new Animated.Value(1)).current;
   const fallAnim   = useRef<Animated.CompositeAnimation | null>(null);
 
   // addListener로 실제 Y 값을 추적 (시간 기반 계산의 startTime 오차 제거)
-  const pausedY     = useRef(-60);      // 정지 시점의 실제 Y
-  const hasBeenPaused = useRef(false);  // 최초 마운트에서 resume 로직 방지
+  const pausedY     = useRef(word.startY); // 정지 시점의 실제 Y
+  const hasBeenPaused = useRef(false);     // 최초 마운트에서 resume 로직 방지
 
   useEffect(() => {
     const id = translateY.addListener(({ value }) => { pausedY.current = value; });
@@ -40,6 +42,7 @@ export default function FallingWord({ word, screenHeight, paused = false, onClea
     fallAnim.current = Animated.timing(translateY, {
       toValue: screenHeight + 60,
       duration: word.duration,
+      easing: Easing.linear,
       useNativeDriver: false,
     });
     fallAnim.current.start();
@@ -57,16 +60,19 @@ export default function FallingWord({ word, screenHeight, paused = false, onClea
     } else if (hasBeenPaused.current) {
       // 정지 시점의 실제 Y에서 재개 (시간 기반 오차 없음)
       hasBeenPaused.current = false;
-      const fromY    = pausedY.current;
-      const progress = Math.max(0, Math.min(1, (fromY + 60) / (screenHeight + 120)));
-      const remaining = word.duration * (1 - progress);
+      const fromY       = pausedY.current;
+      const fullRange   = (screenHeight + 60) - word.startY;
+      const distRemain  = Math.max(0, (screenHeight + 60) - fromY);
+      const remaining   = word.duration * (distRemain / fullRange);
       if (remaining <= 0) return;
 
       fallAnim.current = Animated.timing(translateY, {
         toValue: screenHeight + 60,
         duration: remaining,
+        easing: Easing.linear,
         useNativeDriver: false,
       });
+      onResumed?.(word.id); // 애니메이션 시작 직전에 부모에게 알림 → 이 시점에 타이머 설정
       fallAnim.current.start();
     }
   }, [paused]);

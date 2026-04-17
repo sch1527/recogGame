@@ -9,11 +9,13 @@ import FallingWord, { WordItem } from '../components/FallingWord';
 import VoicePanel from '../components/VoicePanel';
 import Character, { CHAR_HEIGHT } from '../components/Character';
 import LaserBeam, { BeamData } from '../components/LaserBeam';
-import { getRandomWord, getStageInfo } from '../data/words';
+import { getWordPool, getStageInfo } from '../data/words';
 
 const SIDE_PANEL_W = 130; // VoicePanel 사이드바 너비 (가로 모드)
 // FallingWord 박스 높이 근사값: paddingVertical(12) + border(2) + fontSize(20) × lineHeight(1.3≈26) = 40
 const WORD_BOX_H = 40;
+// 화면 전체(startY=-60 → areaH+60)를 통과하는 기준 낙하 시간(ms) — 실제 단어별 duration은 startY에 따라 비례 조정
+const FALL_BASE_DURATION = 80000;
 
 function levenshtein(a: string, b: string): number {
   const m = a.length, n = b.length;
@@ -69,7 +71,7 @@ import type { RouteProp } from '@react-navigation/native';
 import { unlockStage } from '../utils/unlocks';
 import { useSettings } from '../context/SettingsContext';
 
-const WORDS_TO_CLEAR_BY_DIFF = { easy: 8, normal: 12, hard: 18 } as const;
+const WORDS_TO_CLEAR_BY_DIFF = { easy: 6, normal: 8, hard: 10 } as const;
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Game'>;
@@ -115,12 +117,6 @@ const cdStyles = StyleSheet.create({
   },
 });
 
-function fallDuration(stage: number) {
-  return Math.max(4000, 7500 - (stage - 1) * 1000 + (Math.random() - 0.5) * 1200);
-}
-function spawnInterval(stage: number) {
-  return Math.max(1500, 3000 - (stage - 1) * 500);
-}
 
 export default function GameScreen({ navigation, route }: Props) {
   useKeepAwake();
@@ -159,10 +155,12 @@ export default function GameScreen({ navigation, route }: Props) {
   const wordDeadlines = useRef<Map<string, number>>(new Map());
   // 단어 id → 일시정지 시점의 실제 translateY 값 (FallingWord에서 콜백으로 전달)
   const wordPausedYs = useRef<Map<string, number>>(new Map());
+  // 단어 id → 재개 시 애니메이션 시작 후 ground까지 남은 ms (onResumed에서 타이머 설정에 사용)
+  const wordTToGround = useRef<Map<string, number>>(new Map());
   // 일시정지 관련
   const isPausedRef = useRef(false);   // 동기적으로 최신 상태 유지 (리스너 closure 방지)
   const pauseStartRef = useRef<number | null>(null);
-  const wasGamePausedRef = useRef(false); // 직전 렌더에서 isGamePaused 값 (spawn 재개 감지)
+  const spawnedRef = useRef(false); // 최초 1회 스폰 완료 여부
   isPausedRef.current = isGamePaused;  // 매 렌더마다 동기 갱신
 
   useEffect(() => { scoreRef.current = score; }, [score]);
@@ -248,13 +246,14 @@ export default function GameScreen({ navigation, route }: Props) {
       if (candidates.length === 0) return prev;
       const { w: word, i: idx } = candidates.reduce((a, b) => b.progress > a.progress ? b : a);
 
-      // 정답 처리 시 바닥 도달 타이머 취소
+      // 정답 처리 시 바닥 도달 타이머 취소 (재개 대기 중인 항목도 함께 정리)
       const timer = wordTimers.current.get(word.id);
       if (timer !== undefined) {
         clearTimeout(timer);
         wordTimers.current.delete(word.id);
       }
       wordDeadlines.current.delete(word.id);
+      wordTToGround.current.delete(word.id); // onResumed 콜백에서 타이머 설정 방지
       const pts = word.text.length * 10 + stage * 5;
       setScore(s => s + pts);
       setCleared(c => c + 1);
@@ -268,7 +267,8 @@ export default function GameScreen({ navigation, route }: Props) {
       const spawnTime = parseInt(word.id.slice(1));
       const elapsed = Date.now() - spawnTime - word.pausedMs;
       const progress = Math.min(Math.max(elapsed / word.duration, 0), 1);
-      const wordY = -60 + (areaH + 120) * progress + 18; // 18 = 단어 박스 절반 높이 근사
+      const fullRange = (areaH + 60) - word.startY;
+      const wordY = word.startY + fullRange * progress + 18; // 18 = 단어 박스 절반 높이 근사
       const wordX = word.x + 55;                          // 55 = 단어 박스 평균 절반 너비 근사
       // 캐릭터 캐논 위치: 게임 영역 하단 중앙, CHAR_HEIGHT 위
       const charCX = areaW / 2;
@@ -295,6 +295,15 @@ export default function GameScreen({ navigation, route }: Props) {
     wordPausedYs.current.set(id, y);
   }, []);
 
+  // FallingWord가 애니메이션을 실제로 시작한 순간에 타이머 설정
+  // → δ_resume(재개 렌더 지연) 이후에 t_to_ground 타이머를 설정하므로 버퍼 불필요
+  const handleWordResumed = useCallback((id: string) => {
+    const t_to_ground = wordTToGround.current.get(id);
+    if (t_to_ground === undefined) return; // 이미 정답 처리 또는 재일시정지됨
+    wordTToGround.current.delete(id);
+    wordTimers.current.set(id, setTimeout(() => handleBottom(id), Math.max(0, t_to_ground)));
+  }, [handleBottom]);
+
   // 일시정지: useEffect가 아닌 함수로 동기 처리 (race condition 방지)
   // isPausedRef.current를 렌더 전에 즉시 true로 설정해 타이머 race window 제거
   const pauseGame = useCallback(() => {
@@ -305,34 +314,55 @@ export default function GameScreen({ navigation, route }: Props) {
     ExpoSpeechRecognitionModule.stop();
     wordTimers.current.forEach(t => clearTimeout(t));
     wordTimers.current.clear();
+    wordTToGround.current.clear(); // 재개 대기 중인 타이머 예약도 취소
     setSettingsOpen(true);
   }, [settingsOpen]);
 
-  // 단어 생성 + 바닥 도달 타이머 설정
+  // 게임 시작 시 단어 전체를 한 번에 스폰
   useEffect(() => {
-    const resumingFromPause = wasGamePausedRef.current && !isGamePaused;
-    wasGamePausedRef.current = isGamePaused;
-    if (!active.current || gameAreaH === 0 || isGamePaused) return; // 일시정지 중엔 스폰 안 함
-    const spawn = () => {
-      if (!active.current || wordsRef.current.length >= 7) return;
-      const existing = wordsRef.current.map(w => w.text);
-      const text = getRandomWord(stage, existing);
-      const x = Math.random() * (gameW - 110) + 8;
-      const duration = fallDuration(stage);
-      const id = newId();
-      setWords(prev => [...prev, { id, text, x, duration, cleared: false, missed: false, pausedMs: 0 }]);
-      // translateY: -60 → areaH+60, word BOTTOM이 ground에 닿는 시점:
-      // translateY = areaH - WORD_BOX_H → time = duration × (areaH - WORD_BOX_H + 60) / (areaH + 120)
-      const areaH = gameAreaHRef.current;
-      const timeToGround = Math.round(duration * (areaH - WORD_BOX_H + 60) / (areaH + 120));
-      const deadline = Date.now() + timeToGround;
-      wordDeadlines.current.set(id, deadline);
-      const timer = setTimeout(() => handleBottom(id), timeToGround);
-      wordTimers.current.set(id, timer);
-    };
-    if (!resumingFromPause) spawn(); // 재개 시 즉시 spawn 건너뜀 (중복 방지)
-    const t = setInterval(spawn, spawnInterval(stage));
-    return () => clearInterval(t);
+    if (!active.current || gameAreaH === 0 || isGamePaused || spawnedRef.current) return;
+    spawnedRef.current = true;
+
+    const pool = getWordPool(stage);                          // 스테이지 단어 6개
+    const N = WORDS_TO_CLEAR_BY_DIFF[difficulty];             // easy:6, normal:8, hard:10
+    const texts: string[] = [...pool];
+    for (let i = 0; i < N - pool.length; i++) {              // 초과분은 풀에서 랜덤 중복
+      texts.push(pool[Math.floor(Math.random() * pool.length)]);
+    }
+    for (let i = texts.length - 1; i > 0; i--) {             // 셔플
+      const j = Math.floor(Math.random() * (i + 1));
+      [texts[i], texts[j]] = [texts[j], texts[i]];
+    }
+
+    const areaH = gameAreaH;
+
+    // Y 슬롯: 겹침 없도록 분할 (슬롯 높이 = max(WORD_BOX_H+4, 가용영역/N))
+    const usableH  = areaH - WORD_BOX_H - 20;
+    const slotH    = Math.max(WORD_BOX_H + 4, usableH / N);
+    const yTop     = Math.min(0, usableH - slotH * N); // 부족하면 화면 위로 연장
+    // X 3열 교번: 인접 Y 단어가 다른 열에 배치되어 시각적 X 충돌 방지
+    const zoneW    = (gameW - 100) / 3;
+
+    const newWords: WordItem[] = texts.map((text, i) => {
+      const slotTop = yTop + i * slotH;
+      const startY  = slotTop + Math.random() * Math.max(0, slotH - WORD_BOX_H - 4);
+      const zone    = i % 3;
+      const x       = 8 + zone * zoneW + Math.random() * Math.max(0, zoneW - 40);
+      const id      = newId();
+      // 모든 단어에 동일한 duration → startY에 관계없이 항상 FALL_BASE_DURATION의 시간 비율 확보
+      return { id, text, x, duration: FALL_BASE_DURATION, cleared: false, missed: false, pausedMs: 0, startY };
+    });
+
+    setWords(newWords);
+
+    // 오답 타이머: distToGround / fullRange 비율로 계산 → 아래 단어도 충분한 시간 확보
+    newWords.forEach(w => {
+      const fullRange    = (areaH + 60) - w.startY;
+      const distToGround = Math.max(0, (areaH - WORD_BOX_H) - w.startY);
+      const timeToGround = Math.round(FALL_BASE_DURATION * distToGround / fullRange);
+      wordDeadlines.current.set(w.id, Date.now() + timeToGround);
+      wordTimers.current.set(w.id, setTimeout(() => handleBottom(w.id), timeToGround));
+    });
   }, [stage, gameW, gameAreaH, isGamePaused]);
 
   // 카운트다운: 3→2→1→0 후 재개
@@ -353,25 +383,22 @@ export default function GameScreen({ navigation, route }: Props) {
     // isPausedRef를 즉시 해제: handleBottom이 이 이후부터 정상 동작
     isPausedRef.current = false;
 
-    // 위치 기반으로 t_to_ground 계산:
-    // FallingWord에서 onPaused 콜백으로 받은 실제 translateY(pausedY)를 사용.
-    // 시간 역산 방식(T_elapsed_anim)보다 rAF 프레임 오차(최대 16ms×누적)가 없어 정확함.
-    // RESUME_ANIM_BUFFER: setCountdown(null) 후 렌더 2회가 완료되어야 애니메이션이 재개되므로
-    //   그 지연(δ_resume) 동안 타이머가 먼저 발화하지 않도록 보정
-    const RESUME_ANIM_BUFFER = 120; // ms
+    // 위치 기반으로 t_to_ground 계산 후 wordTToGround에 저장.
+    // 타이머는 onResumed 콜백(FallingWord가 애니메이션을 실제로 시작한 순간)에서 설정 →
+    // δ_resume(재개 렌더 지연) 문제 완전 제거, 버퍼 불필요
     const areaH = gameAreaHRef.current;
-    const speed = 1 / (areaH + 120); // px per ms (duration 곱하면 실제 속도)
     wordsRef.current.filter(w => !w.cleared && !w.missed).forEach(w => {
       const fromY = wordPausedYs.current.get(w.id) ?? (() => {
         // fallback: 시간 기반 추정 (onPaused 콜백이 아직 안 온 경우)
         const T_elapsed_anim = T_pause - parseInt(w.id.slice(1)) - w.pausedMs;
-        return -60 + (areaH + 120) * T_elapsed_anim / w.duration;
+        return w.startY + ((areaH + 60) - w.startY) * T_elapsed_anim / w.duration;
       })();
       // 단어 하단이 ground에 닿을 때까지 남은 거리 → 시간으로 변환
       const distToGround = Math.max(0, (areaH - WORD_BOX_H) - fromY);
-      const t_to_ground = distToGround * w.duration * speed; // = distToGround / (areaH+120) * duration
-      wordDeadlines.current.set(w.id, Date.now() + t_to_ground);
-      wordTimers.current.set(w.id, setTimeout(() => handleBottom(w.id), t_to_ground + RESUME_ANIM_BUFFER));
+      const fullRange    = (areaH + 60) - w.startY;
+      const t_to_ground  = distToGround * w.duration / fullRange;
+      wordTToGround.current.set(w.id, t_to_ground); // onResumed에서 타이머 설정에 사용
+      wordDeadlines.current.set(w.id, Date.now() + t_to_ground); // 정리용
     });
     wordPausedYs.current.clear();
 
@@ -475,6 +502,7 @@ export default function GameScreen({ navigation, route }: Props) {
               paused={isGamePaused}
               onClearAnimationDone={handleClearDone}
               onPaused={handleWordPaused}
+              onResumed={handleWordResumed}
             />
           ))}
           {laserBeams.map(b => (
