@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Animated, SafeAreaView, useWindowDimensions } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Animated, SafeAreaView, BackHandler, useWindowDimensions } from 'react-native';
 import LottieView from 'lottie-react-native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../App';
@@ -16,6 +16,14 @@ export default function HomeScreen({ navigation }: Props) {
   useEffect(() => {
     Animated.timing(fadeIn, { toValue: 1, duration: 700, useNativeDriver: true }).start();
   }, []);
+
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (settingsOpen) { setSettingsOpen(false); return true; }
+      return false; // 설정창 닫혀있으면 기본 동작(앱 종료) 허용
+    });
+    return () => sub.remove();
+  }, [settingsOpen]);
 
   if (isLandscape) {
     return (

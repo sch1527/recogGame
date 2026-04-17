@@ -38,7 +38,6 @@ export default function GameOverScreen({ navigation, route }: Props) {
         {/* 가로 모드: 카드(왼쪽) + 버튼(오른쪽) */}
         <View style={styles.landBody}>
           <Animated.View style={[styles.cardLand, { transform: [{ scale }] }]}>
-            <Text style={styles.rankEmojiLand}>{rank.emoji}</Text>
             <Text style={styles.gameOverLand}>게임 종료</Text>
             <Text style={styles.rankLabelLand}>{rank.label}</Text>
             <Text style={styles.scoreLblLand}>최종 점수</Text>
@@ -61,7 +60,6 @@ export default function GameOverScreen({ navigation, route }: Props) {
   return (
     <SafeAreaView style={styles.container}>
       <Animated.View style={[styles.card, { transform: [{ scale }] }]}>
-        <Text style={styles.rankEmoji}>{rank.emoji}</Text>
         <Text style={styles.gameOver}>게임 종료</Text>
         <Text style={styles.rankLabel}>{rank.label}</Text>
         <Text style={styles.scoreLbl}>최종 점수</Text>

@@ -336,10 +336,10 @@ export default function GameScreen({ navigation, route }: Props) {
 
     const areaH = gameAreaH;
 
-    // Y 슬롯: 겹침 없도록 분할 (슬롯 높이 = max(WORD_BOX_H+4, 가용영역/N))
+    // Y 슬롯: 가용 영역을 N등분 → 모든 단어가 처음부터 화면 안에 표시됨
     const usableH  = areaH - WORD_BOX_H - 20;
-    const slotH    = Math.max(WORD_BOX_H + 4, usableH / N);
-    const yTop     = Math.min(0, usableH - slotH * N); // 부족하면 화면 위로 연장
+    const slotH    = usableH / N;
+    const yTop     = 0;
     // X 3열 교번: 인접 Y 단어가 다른 열에 배치되어 시각적 X 충돌 방지
     const zoneW    = (gameW - 100) / 3;
 
