@@ -71,7 +71,8 @@ import type { RouteProp } from '@react-navigation/native';
 import { unlockStage } from '../utils/unlocks';
 import { useSettings } from '../context/SettingsContext';
 
-const WORDS_TO_CLEAR_BY_DIFF = { easy: 6, normal: 8, hard: 10 } as const;
+const WORDS_TO_SPAWN_BY_DIFF = { easy: 6, normal: 8, hard: 10 } as const; // 화면에 띄울 단어 수
+const WORDS_TO_CLEAR_BY_DIFF = { easy: 4, normal: 5, hard: 6  } as const; // 스테이지 클리어 기준
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Game'>;
@@ -168,17 +169,22 @@ export default function GameScreen({ navigation, route }: Props) {
   useEffect(() => { gameAreaHRef.current = gameAreaH; }, [gameAreaH]);
   useEffect(() => { gamWRef.current = gameW; }, [gameW]);
 
-  // 스테이지 클리어 감지
+  // 모든 단어 처리 완료 후 결과 판정 (클리어 기준 달성 여부에 따라 스테이지 클리어 or 게임오버)
+  // cleared >= WORDS_TO_CLEAR 시점에 즉시 종료하지 않고, 남은 단어가 모두 처리될 때까지 대기
   useEffect(() => {
-    if (cleared < WORDS_TO_CLEAR) return;
+    if (!active.current || !spawnedRef.current || words.length > 0) return;
     active.current = false;
     ExpoSpeechRecognitionModule.stop();
     wordTimers.current.forEach(t => clearTimeout(t));
     wordTimers.current.clear();
-    unlockStage(stage + 1).then(() => {
-      navigation.replace('StageClear', { stage, score: scoreRef.current });
-    });
-  }, [cleared]);
+    if (cleared >= WORDS_TO_CLEAR) {
+      unlockStage(stage + 1).then(() => {
+        navigation.replace('StageClear', { stage, score: scoreRef.current });
+      });
+    } else {
+      navigation.replace('GameOver', { stage, score: scoreRef.current });
+    }
+  }, [words, cleared]);
 
   function startListen() {
     ExpoSpeechRecognitionModule.start({ lang: 'en-US', continuous: true, interimResults: true });
@@ -324,7 +330,7 @@ export default function GameScreen({ navigation, route }: Props) {
     spawnedRef.current = true;
 
     const pool = getWordPool(stage);                          // 스테이지 단어 6개
-    const N = WORDS_TO_CLEAR_BY_DIFF[difficulty];             // easy:6, normal:8, hard:10
+    const N = WORDS_TO_SPAWN_BY_DIFF[difficulty];             // easy:6, normal:8, hard:10
     const texts: string[] = [...pool];
     for (let i = 0; i < N - pool.length; i++) {              // 초과분은 풀에서 랜덤 중복
       texts.push(pool[Math.floor(Math.random() * pool.length)]);
@@ -469,7 +475,7 @@ export default function GameScreen({ navigation, route }: Props) {
           </View>
           <View style={styles.col}>
             <Text style={styles.labelSm}>진행</Text>
-            <Text style={styles.levelVal}>{cleared}/{WORDS_TO_CLEAR}</Text>
+            <Text style={styles.levelVal}>{cleared}/{WORDS_TO_SPAWN_BY_DIFF[difficulty]}</Text>
           </View>
           <View style={styles.col}>
             <Text style={styles.labelSm}>점수</Text>

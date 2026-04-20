@@ -1,13 +1,14 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  SafeAreaView, useWindowDimensions,
+  SafeAreaView, BackHandler, useWindowDimensions,
 } from 'react-native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../App';
 import { STAGES, STAGE_COUNT } from '../data/words';
 import { getUnlockedStages } from '../utils/unlocks';
 import { useFocusEffect } from '@react-navigation/native';
+import SettingsModal from '../components/SettingsModal';
 
 type Props = { navigation: NativeStackNavigationProp<RootStackParamList, 'StageSelect'> };
 
@@ -15,6 +16,7 @@ export default function StageSelectScreen({ navigation }: Props) {
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
   const [unlocked, setUnlocked] = useState<number[]>([1]);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -22,10 +24,22 @@ export default function StageSelectScreen({ navigation }: Props) {
     }, [])
   );
 
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (settingsOpen) { setSettingsOpen(false); return true; }
+      return false;
+    });
+    return () => sub.remove();
+  }, [settingsOpen]);
+
   const allCleared = unlocked.length >= STAGE_COUNT;
 
   return (
     <SafeAreaView style={styles.container}>
+      <TouchableOpacity style={styles.gearBtn} onPress={() => setSettingsOpen(true)}>
+        <Text style={styles.gearIcon}>⚙</Text>
+      </TouchableOpacity>
+
       <Text style={styles.title}>스테이지 선택</Text>
       {allCleared && (
         <Text style={styles.allClear}>🏆 전체 클리어!</Text>
@@ -65,6 +79,8 @@ export default function StageSelectScreen({ navigation }: Props) {
       <TouchableOpacity style={styles.backBtn} onPress={() => navigation.navigate('Home')}>
         <Text style={styles.backTxt}>← 홈으로</Text>
       </TouchableOpacity>
+
+      <SettingsModal visible={settingsOpen} onClose={() => setSettingsOpen(false)} showDifficulty />
     </SafeAreaView>
   );
 }
@@ -74,6 +90,10 @@ const styles = StyleSheet.create({
     flex: 1, backgroundColor: '#0a0a2e',
     alignItems: 'center', justifyContent: 'center', padding: 24,
   },
+  gearBtn: {
+    position: 'absolute', top: 12, right: 16, zIndex: 10, padding: 8,
+  },
+  gearIcon: { fontSize: 24, color: '#6666aa' },
   title: {
     color: '#fff', fontSize: 28, fontWeight: '900',
     letterSpacing: 3, marginBottom: 8,
