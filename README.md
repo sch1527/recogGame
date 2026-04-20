@@ -50,7 +50,7 @@
 - [@react-navigation/native-stack](https://reactnavigation.org) - 화면 전환
 - [lottie-react-native](https://github.com/lottie-react-native/lottie-react-native) - 애니메이션
 - [react-native-reanimated](https://docs.swmansion.com/react-native-reanimated/) - 단어 낙하 애니메이션
-- [@react-native-async-storage/async-storage](https://react-native-async-storage.github.io/async-storage/) - 설정 영구 저장
+- [@react-native-async-storage/async-storage](https://react-native-async-storage.github.io) - 설정 영구 저장
 - [expo-keep-awake](https://docs.expo.dev/versions/latest/sdk/keep-awake/) - 게임 중 화면 꺼짐 방지
 
 ## 프로젝트 구조
