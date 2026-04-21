@@ -1,21 +1,20 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useKeepAwake } from 'expo-keep-awake';
-import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, BackHandler, Animated, useWindowDimensions } from 'react-native';
+import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, BackHandler, AppState, Animated, useWindowDimensions } from 'react-native';
 import SettingsModal from '../components/SettingsModal';
 import { ExpoSpeechRecognitionModule } from 'expo-speech-recognition';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../App';
 import FallingWord, { WordItem } from '../components/FallingWord';
-import VoicePanel from '../components/VoicePanel';
+import VoicePanel, { VoicePanelHandle } from '../components/VoicePanel';
 import Character, { CHAR_HEIGHT } from '../components/Character';
 import LaserBeam, { BeamData } from '../components/LaserBeam';
 import { getWordPool, getStageInfo } from '../data/words';
 
-const SIDE_PANEL_W = 130; // VoicePanel 사이드바 너비 (가로 모드)
 // FallingWord 박스 높이 근사값: paddingVertical(12) + border(2) + fontSize(20) × lineHeight(1.3≈26) = 40
 const WORD_BOX_H = 40;
 // 화면 전체(startY=-60 → areaH+60)를 통과하는 기준 낙하 시간(ms) — 실제 단어별 duration은 startY에 따라 비례 조정
-const FALL_BASE_DURATION = 80000;
+const FALL_BASE_DURATION = 45000;
 
 function levenshtein(a: string, b: string): number {
   const m = a.length, n = b.length;
@@ -57,11 +56,18 @@ function normalizeSpoken(text: string): string {
   return text.replace(/\d+/g, n => NUM_TO_WORD[n] ?? n);
 }
 
+// b↔p, d↔t, g↔k, v↔f, z↔s 처럼 음성 엔진이 혼동하는 유성/무성 쌍을 통일
+function phonetize(s: string): string {
+  return s.replace(/[bp]/g, 'p').replace(/[dt]/g, 't').replace(/[gk]/g, 'k')
+          .replace(/[fv]/g, 'f').replace(/[sz]/g, 's');
+}
+
 function isFuzzyMatch(target: string, spoken: string): boolean {
   const t = target.toLowerCase();
   const s = normalizeSpoken(spoken.toLowerCase());
-  const allowedDist = Math.floor(t.length * 0.2);
+  const allowedDist = Math.max(1, Math.ceil(t.length * 0.5)); // 5글자 → 3자 오차 허용 (apple/april 등 처리)
   if (levenshtein(t, s) <= allowedDist) return true;
+  if (levenshtein(phonetize(t), phonetize(s)) <= allowedDist) return true; // 유성/무성 혼동 허용
   if (soundex(t) === soundex(s)) return true;
   if (t.startsWith(s) && s.length >= Math.ceil(t.length * 0.6)) return true;
   return false;
@@ -71,8 +77,7 @@ import type { RouteProp } from '@react-navigation/native';
 import { unlockStage } from '../utils/unlocks';
 import { useSettings } from '../context/SettingsContext';
 
-const WORDS_TO_SPAWN_BY_DIFF = { easy: 6, normal: 8, hard: 10 } as const; // 화면에 띄울 단어 수
-const WORDS_TO_CLEAR_BY_DIFF = { easy: 4, normal: 5, hard: 6  } as const; // 스테이지 클리어 기준
+const SCORE_TO_CLEAR_BY_DIFF = { easy: 800, normal: 1000, hard: 1200 } as const; // 스테이지 클리어 목표 점수
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Game'>;
@@ -118,29 +123,70 @@ const cdStyles = StyleSheet.create({
   },
 });
 
+// ── HP 바 ────────────────────────────────────────────────────
+function HpBar({ lives, maxLives }: { lives: number; maxLives: number }) {
+  const pct = Math.max(0, Math.min(1, lives / maxLives));
+  const color = pct > 0.6 ? '#44dd88' : pct > 0.3 ? '#ffaa22' : '#ff3355';
+  const animPct = useRef(new Animated.Value(pct)).current;
+
+  useEffect(() => {
+    Animated.timing(animPct, { toValue: pct, duration: 300, useNativeDriver: false }).start();
+  }, [pct]);
+
+  return (
+    <View style={hpStyles.wrap}>
+      <Text style={hpStyles.label}>HP</Text>
+      <View style={hpStyles.track}>
+        <Animated.View style={[hpStyles.fill, {
+          width: animPct.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }),
+          backgroundColor: color,
+          shadowColor: color,
+        }]} />
+      </View>
+      {/* <Text style={[hpStyles.count, { color }]}>{lives}/{maxLives}</Text> */}
+    </View>
+  );
+}
+
+const hpStyles = StyleSheet.create({
+  wrap: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  label: { color: '#6666aa', fontSize: 10, letterSpacing: 1, width: 16 },
+  track: {
+    width: 102, height: 8, borderRadius: 4,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    overflow: 'hidden',
+  },
+  fill: {
+    height: '100%', borderRadius: 4,
+    shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.8, shadowRadius: 4, elevation: 3,
+  },
+  count: { fontSize: 11, fontWeight: 'bold', minWidth: 24, textAlign: 'right' },
+});
+
+
+const SKILL_MAX = 10;
+
 
 export default function GameScreen({ navigation, route }: Props) {
   useKeepAwake();
   const { stage } = route.params;
-  const { width: W, height: H } = useWindowDimensions();
-  const isLandscape = W > H;
-  const gameW = isLandscape ? W - SIDE_PANEL_W : W;
+  const { width: W } = useWindowDimensions();
+  const gameW = W;
 
   const { difficulty } = useSettings();
-  const WORDS_TO_CLEAR = WORDS_TO_CLEAR_BY_DIFF[difficulty];
+  const SCORE_TO_CLEAR = SCORE_TO_CLEAR_BY_DIFF[difficulty];
 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [countdown, setCountdown] = useState<number | null>(null);
   const isGamePaused = settingsOpen || countdown !== null;
+  const voicePanelRef = useRef<VoicePanelHandle>(null);
   const [words, setWords] = useState<WordItem[]>([]);
   const [score, setScore] = useState(0);
   const [lives, setLives] = useState(3);
-  const [cleared, setCleared] = useState(0);
-  const [transcript, setTranscript] = useState('');
-  const [lastMatched, setLastMatched] = useState('');
   const [isListening, setIsListening] = useState(false);
   const [gameAreaH, setGameAreaH] = useState(0); // onLayout 전까지 0
   const [laserBeams, setLaserBeams] = useState<BeamData[]>([]);
+  const matchCountRef = useRef(0);
 
   const active = useRef(true);
   const scoreRef = useRef(0);
@@ -148,6 +194,9 @@ export default function GameScreen({ navigation, route }: Props) {
   const livesRef = useRef(3);
   const wordsRef = useRef<WordItem[]>([]);
   const processedUpTo = useRef(0);
+  const pendingTextRef = useRef('');     // rAF 대기 중인 최신 transcript
+  const rafPendingRef = useRef(false);   // rAF 예약 여부
+  const lastSpokenWordRef = useRef(''); // 마지막으로 matchWord에 넘긴 단어 (중복 방지)
   const gameAreaHRef = useRef(0);
   const gamWRef = useRef(gameW);
   // 단어 id → setTimeout 타이머
@@ -161,7 +210,11 @@ export default function GameScreen({ navigation, route }: Props) {
   // 일시정지 관련
   const isPausedRef = useRef(false);   // 동기적으로 최신 상태 유지 (리스너 closure 방지)
   const pauseStartRef = useRef<number | null>(null);
-  const spawnedRef = useRef(false); // 최초 1회 스폰 완료 여부
+  const spawnedRef = useRef(false);
+  const spawnTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const spawnTimerDeadline = useRef<number | null>(null);
+  const pendingSpawnsRef = useRef<Array<{text: string}>>([]);
+  const spawnNextWordRef = useRef<() => void>(() => {});
   isPausedRef.current = isGamePaused;  // 매 렌더마다 동기 갱신
 
   useEffect(() => { scoreRef.current = score; }, [score]);
@@ -169,25 +222,27 @@ export default function GameScreen({ navigation, route }: Props) {
   useEffect(() => { gameAreaHRef.current = gameAreaH; }, [gameAreaH]);
   useEffect(() => { gamWRef.current = gameW; }, [gameW]);
 
-  // 모든 단어 처리 완료 후 결과 판정 (클리어 기준 달성 여부에 따라 스테이지 클리어 or 게임오버)
-  // cleared >= WORDS_TO_CLEAR 시점에 즉시 종료하지 않고, 남은 단어가 모두 처리될 때까지 대기
+  // 목표 점수 달성 시 스테이지 클리어
   useEffect(() => {
-    if (!active.current || !spawnedRef.current || words.length > 0) return;
+    if (!active.current || score < SCORE_TO_CLEAR) return;
     active.current = false;
     ExpoSpeechRecognitionModule.stop();
+    if (spawnTimer.current !== null) { clearTimeout(spawnTimer.current); spawnTimer.current = null; }
     wordTimers.current.forEach(t => clearTimeout(t));
     wordTimers.current.clear();
-    if (cleared >= WORDS_TO_CLEAR) {
-      unlockStage(stage + 1).then(() => {
-        navigation.replace('StageClear', { stage, score: scoreRef.current });
-      });
-    } else {
-      navigation.replace('GameOver', { stage, score: scoreRef.current });
-    }
-  }, [words, cleared]);
+    unlockStage(stage + 1).then(() => {
+      navigation.replace('StageClear', { stage, score: scoreRef.current });
+    });
+  }, [score]);
 
   function startListen() {
-    ExpoSpeechRecognitionModule.start({ lang: 'en-US', continuous: true, interimResults: true });
+    ExpoSpeechRecognitionModule.start({
+      lang: 'en-US',
+      continuous: true,
+      interimResults: true,
+      addsPunctuation: false,
+      requiresOnDeviceRecognition: false,
+    });
   }
 
   const handleBottom = useCallback((id: string) => {
@@ -213,80 +268,169 @@ export default function GameScreen({ navigation, route }: Props) {
     const s1 = mod.addListener('start', () => {
       setIsListening(true);
       processedUpTo.current = 0;
+      lastSpokenWordRef.current = '';
     });
     const s2 = mod.addListener('end', () => {
-      setIsListening(false);
-      if (active.current && !isPausedRef.current) startListen();
+      if (active.current && !isPausedRef.current) {
+        // 즉시 재시작 → isListening을 false로 바꾸지 않아 리렌더 방지
+        startListen();
+      } else {
+        setIsListening(false);
+      }
     });
     const s3 = mod.addListener('result', (e: any) => {
       const text = e.results?.[0]?.transcript?.trim() ?? '';
-      setTranscript(text);
+      voicePanelRef.current?.setTranscript(text);
+      pendingTextRef.current = text;
 
-      if (text) {
-        const allWords = text.toLowerCase().split(/\s+/);
-        // 새 발화 시작 시 transcript가 짧아지므로 processedUpTo 리셋
-        if (allWords.length < processedUpTo.current) {
-          processedUpTo.current = 0;
-        }
-        // 완성된 단어들(마지막 제외)만 processedUpTo로 스킵
-        for (let i = processedUpTo.current; i < allWords.length - 1; i++) {
-          matchWord(allWords[i]);
-        }
-        processedUpTo.current = Math.max(processedUpTo.current, allWords.length - 1);
-        // 마지막 단어는 항상 재시도 (현재 발화 중인 단어, interim마다 업데이트됨)
-        matchWord(allWords[allWords.length - 1]);
+      // rAF로 프레임당 1회만 매칭 처리 → 초당 수십 번 발생하는 result 이벤트 부하 제거
+      if (!rafPendingRef.current) {
+        rafPendingRef.current = true;
+        requestAnimationFrame(() => {
+          rafPendingRef.current = false;
+          const t = pendingTextRef.current;
+          if (!t) return;
+          const allWords = t.toLowerCase().split(/\s+/);
+          if (allWords.length < processedUpTo.current) {
+            processedUpTo.current = 0;
+            lastSpokenWordRef.current = '';
+          }
+          for (let i = processedUpTo.current; i < allWords.length - 1; i++) {
+            matchWord(allWords[i]);
+          }
+          processedUpTo.current = Math.max(processedUpTo.current, allWords.length - 1);
+          // 마지막 단어가 이전과 다를 때만 시도 (같은 interim이 반복되는 경우 스킵)
+          const lastWord = allWords[allWords.length - 1];
+          if (lastWord !== lastSpokenWordRef.current) {
+            lastSpokenWordRef.current = lastWord;
+            matchWord(lastWord);
+          }
+        });
       }
     });
     const s4 = mod.addListener('error', () => {
-      if (active.current && !isPausedRef.current) setTimeout(startListen, 100);
+      if (!active.current || isPausedRef.current) return;
+      // 온디바이스 실패 → 클라우드로 영구 전환 후 재시작
+      setTimeout(startListen, 100);
     });
     return () => { s1.remove(); s2.remove(); s3.remove(); s4.remove(); };
   }, []);
 
-  const matchWord = useCallback((text: string) => {
-    setWords(prev => {
-      const now = Date.now();
-      const candidates = prev
-        .map((w, i) => ({ w, i, progress: (now - parseInt(w.id.slice(1)) - w.pausedMs) / w.duration }))
-        .filter(({ w }) => !w.cleared && !w.missed && isFuzzyMatch(w.text, text));
-      if (candidates.length === 0) return prev;
-      const { w: word, i: idx } = candidates.reduce((a, b) => b.progress > a.progress ? b : a);
+  const spawnSkillWordRef = useRef<() => void>(() => {});
 
-      // 정답 처리 시 바닥 도달 타이머 취소 (재개 대기 중인 항목도 함께 정리)
-      const timer = wordTimers.current.get(word.id);
-      if (timer !== undefined) {
-        clearTimeout(timer);
-        wordTimers.current.delete(word.id);
+  const spawnSkillWord = useCallback(() => {
+    if (!active.current) return;
+    const now = Date.now();
+    const activeWords = wordsRef.current.filter(w => !w.cleared && !w.missed && !w.isSkill);
+
+    // 가장 많이 등장한 단어 선택, 동수일 때 progress 높은 쪽 우선
+    let targetText: string;
+    if (activeWords.length > 0) {
+      const map = new Map<string, { count: number; maxProgress: number }>();
+      for (const w of activeWords) {
+        const progress = (now - parseInt(w.id.slice(1)) - w.pausedMs) / w.duration;
+        const cur = map.get(w.text) ?? { count: 0, maxProgress: 0 };
+        map.set(w.text, { count: cur.count + 1, maxProgress: Math.max(cur.maxProgress, progress) });
       }
-      wordDeadlines.current.delete(word.id);
-      wordTToGround.current.delete(word.id); // onResumed 콜백에서 타이머 설정 방지
-      const pts = word.text.length * 10 + stage * 5;
-      setScore(s => s + pts);
-      setCleared(c => c + 1);
-      setLastMatched(word.text);
-      setTranscript('');
+      let bestCount = 0, bestProgress = -1;
+      targetText = '';
+      for (const [text, { count, maxProgress }] of map) {
+        if (count > bestCount || (count === bestCount && maxProgress > bestProgress)) {
+          targetText = text; bestCount = count; bestProgress = maxProgress;
+        }
+      }
+    } else {
+      const pool = getWordPool(stage);
+      targetText = pool[Math.floor(Math.random() * pool.length)];
+    }
 
-      // 레이저 빔 발사: 캐릭터 캐논 → 단어 현재 위치
-      const areaH = gameAreaHRef.current;
-      const areaW = gamWRef.current;
-      // 단어 현재 Y 추정 (id에 spawn 타임스탬프 내장)
-      const spawnTime = parseInt(word.id.slice(1));
-      const elapsed = Date.now() - spawnTime - word.pausedMs;
-      const progress = Math.min(Math.max(elapsed / word.duration, 0), 1);
-      const fullRange = (areaH + 60) - word.startY;
-      const wordY = word.startY + fullRange * progress + 18; // 18 = 단어 박스 절반 높이 근사
-      const wordX = word.x + 55;                          // 55 = 단어 박스 평균 절반 너비 근사
-      // 캐릭터 캐논 위치: 게임 영역 하단 중앙, CHAR_HEIGHT 위
-      const charCX = areaW / 2;
-      const charCY = areaH - 10 - CHAR_HEIGHT;           // 캐논(머리 꼭대기) Y
-      setLaserBeams(beams => [
-        ...beams,
-        { id: `beam_${word.id}`, x1: charCX, y1: charCY, x2: wordX, y2: wordY },
-      ]);
+    const areaH = gameAreaHRef.current;
+    const startY = -WORD_BOX_H;
+    const wordRange = (areaH + 60) - startY;
+    const duration = Math.round(FALL_BASE_DURATION * wordRange / (areaH + 120));
+    const x = 8 + Math.random() * Math.max(0, gamWRef.current - 120);
+    const id = newId();
+    const w: WordItem = { id, text: targetText, x, duration, cleared: false, missed: false, pausedMs: 0, startY, isSkill: true };
+    setWords(prev => [...prev, w]);
+    const distToGround = Math.max(0, (areaH - WORD_BOX_H) - startY);
+    const timeToGround = Math.round(duration * distToGround / wordRange);
+    wordDeadlines.current.set(id, Date.now() + timeToGround);
+    wordTimers.current.set(id, setTimeout(() => handleBottom(id), timeToGround));
+  }, [handleBottom, stage]);
+  spawnSkillWordRef.current = spawnSkillWord;
 
-      return prev.map((w, i) => i === idx ? { ...w, cleared: true } : w);
+  const matchWord = useCallback((text: string) => {
+    const now = Date.now();
+    const current = wordsRef.current;
+    const candidates = current
+      .map((w, i) => ({ w, i, progress: (now - parseInt(w.id.slice(1)) - w.pausedMs) / w.duration }))
+      .filter(({ w }) => !w.cleared && !w.missed && isFuzzyMatch(w.text, text));
+    if (candidates.length === 0) return;
+
+    const { w: word, i: idx } = candidates.reduce((a, b) => {
+      if (b.w.isSkill !== a.w.isSkill) return b.w.isSkill ? b : a;
+      if (b.w.isHeal !== a.w.isHeal) return b.w.isHeal ? b : a;
+      return b.progress > a.progress ? b : a;
     });
-  }, []);
+
+    // 렌더 전에 ref를 즉시 갱신 → 연속 호출 시 같은 단어 중복 매칭 방지
+    if (word.isSkill) {
+      wordsRef.current = current.map(w =>
+        !w.cleared && !w.missed && w.text === word.text ? { ...w, cleared: true } : w
+      );
+    } else {
+      wordsRef.current = current.map((w, i) => i === idx ? { ...w, cleared: true } : w);
+    }
+
+    const cancelWord = (ww: WordItem) => {
+      const t = wordTimers.current.get(ww.id);
+      if (t !== undefined) { clearTimeout(t); wordTimers.current.delete(ww.id); }
+      wordDeadlines.current.delete(ww.id);
+      wordTToGround.current.delete(ww.id);
+    };
+
+    const areaH = gameAreaHRef.current;
+    const areaW = gamWRef.current;
+    const fireBeam = (ww: WordItem, beamId: string) => {
+      const elapsed = now - parseInt(ww.id.slice(1)) - ww.pausedMs;
+      const progress = Math.min(Math.max(elapsed / ww.duration, 0), 1);
+      const wordY = ww.startY + ((areaH + 60) - ww.startY) * progress + 18;
+      const wordX = ww.x + 55;
+      setLaserBeams(beams => [...beams, { id: beamId, x1: areaW / 2, y1: areaH - 10 - CHAR_HEIGHT, x2: wordX, y2: wordY }]);
+    };
+
+    cancelWord(word);
+    setScore(s => s + word.text.length * 10 + stage * 5);
+    fireBeam(word, `beam_${word.id}`);
+
+    if (word.isHeal && livesRef.current < 3) {
+      livesRef.current += 1;
+      setLives(livesRef.current);
+    }
+
+    matchCountRef.current += 1;
+    const newCharge = matchCountRef.current % SKILL_MAX;
+    voicePanelRef.current?.setSkillCharge(newCharge);
+    if (newCharge === 0) setTimeout(() => spawnSkillWordRef.current(), 50);
+
+    if (word.isSkill) {
+      const sameText = current.filter(w => !w.cleared && !w.missed && w.text === word.text && w.id !== word.id);
+      sameText.forEach(w => {
+        cancelWord(w);
+        setScore(s => s + w.text.length * 10 + stage * 5);
+        fireBeam(w, `beam_skill_${w.id}`);
+      });
+      voicePanelRef.current?.setLastMatched(`⚡ ${word.text}`);
+      voicePanelRef.current?.setTranscript('');
+      // updater 형태 유지 → 동시에 스폰된 단어가 있어도 손실 없음
+      setWords(prev => prev.map(w => !w.cleared && !w.missed && w.text === word.text ? { ...w, cleared: true } : w));
+      return;
+    }
+
+    voicePanelRef.current?.setLastMatched(word.text);
+    voicePanelRef.current?.setTranscript('');
+    setWords(prev => prev.map((w, i) => i === idx ? { ...w, cleared: true } : w));
+  }, [stage]);
 
   const handleClearDone = useCallback((id: string) => {
     setWords(prev => prev.filter(w => w.id !== id));
@@ -310,66 +454,68 @@ export default function GameScreen({ navigation, route }: Props) {
     wordTimers.current.set(id, setTimeout(() => handleBottom(id), Math.max(0, t_to_ground)));
   }, [handleBottom]);
 
+  const SPAWN_INTERVAL_MIN = 5000;
+  const SPAWN_INTERVAL_MAX = 8000;
+
+  const spawnNextWord = useCallback(() => {
+    if (!active.current || pendingSpawnsRef.current.length === 0) return;
+    const { text } = pendingSpawnsRef.current[0];
+    pendingSpawnsRef.current = pendingSpawnsRef.current.slice(1);
+
+    const areaH     = gameAreaHRef.current;
+    const startY    = -WORD_BOX_H;
+    const totalRng  = areaH + 120;
+    const wordRange = (areaH + 60) - startY;
+    const duration  = Math.round(FALL_BASE_DURATION * wordRange / totalRng);
+    const x         = 8 + Math.random() * Math.max(0, gamWRef.current - 120);
+    const id        = newId();
+    const isHeal    = livesRef.current < 3 && Math.random() < 0.15;
+    const w: WordItem = { id, text, x, duration, cleared: false, missed: false, pausedMs: 0, startY, isHeal };
+
+    setWords(prev => [...prev, w]);
+
+    const distToGround = Math.max(0, (areaH - WORD_BOX_H) - startY);
+    const timeToGround = Math.round(duration * distToGround / wordRange);
+    wordDeadlines.current.set(id, Date.now() + timeToGround);
+    wordTimers.current.set(id, setTimeout(() => handleBottom(id), timeToGround));
+
+    // pending이 비었으면 풀에서 다시 채워 무한 스폰
+    if (pendingSpawnsRef.current.length === 0) {
+      const pool = getWordPool(stage);
+      const shuffled = [...pool].sort(() => Math.random() - 0.5);
+      pendingSpawnsRef.current = shuffled.map((t) => ({ text: t }));
+    }
+
+    const delay = SPAWN_INTERVAL_MIN + Math.random() * (SPAWN_INTERVAL_MAX - SPAWN_INTERVAL_MIN);
+    spawnTimerDeadline.current = Date.now() + delay;
+    spawnTimer.current = setTimeout(() => spawnNextWordRef.current(), delay);
+  }, [handleBottom]);
+  spawnNextWordRef.current = spawnNextWord;
+
   // 일시정지: useEffect가 아닌 함수로 동기 처리 (race condition 방지)
   // isPausedRef.current를 렌더 전에 즉시 true로 설정해 타이머 race window 제거
   const pauseGame = useCallback(() => {
     if (!active.current || settingsOpen) return;
     if (pauseStartRef.current === null) pauseStartRef.current = Date.now();
-    isPausedRef.current = true; // 렌더 전 즉시 설정 → handleBottom race 방지
+    isPausedRef.current = true;
     setCountdown(null);
     ExpoSpeechRecognitionModule.stop();
+    if (spawnTimer.current !== null) { clearTimeout(spawnTimer.current); spawnTimer.current = null; }
     wordTimers.current.forEach(t => clearTimeout(t));
     wordTimers.current.clear();
-    wordTToGround.current.clear(); // 재개 대기 중인 타이머 예약도 취소
+    wordTToGround.current.clear();
     setSettingsOpen(true);
   }, [settingsOpen]);
 
-  // 게임 시작 시 단어 전체를 한 번에 스폰
   useEffect(() => {
     if (!active.current || gameAreaH === 0 || isGamePaused || spawnedRef.current) return;
     spawnedRef.current = true;
 
-    const pool = getWordPool(stage);                          // 스테이지 단어 6개
-    const N = WORDS_TO_SPAWN_BY_DIFF[difficulty];             // easy:6, normal:8, hard:10
-    const texts: string[] = [...pool];
-    for (let i = 0; i < N - pool.length; i++) {              // 초과분은 풀에서 랜덤 중복
-      texts.push(pool[Math.floor(Math.random() * pool.length)]);
-    }
-    for (let i = texts.length - 1; i > 0; i--) {             // 셔플
-      const j = Math.floor(Math.random() * (i + 1));
-      [texts[i], texts[j]] = [texts[j], texts[i]];
-    }
-
-    const areaH = gameAreaH;
-
-    // Y 슬롯: 가용 영역을 N등분 → 모든 단어가 처음부터 화면 안에 표시됨
-    const usableH  = areaH - WORD_BOX_H - 20;
-    const slotH    = usableH / N;
-    const yTop     = 0;
-    // X 3열 교번: 인접 Y 단어가 다른 열에 배치되어 시각적 X 충돌 방지
-    const zoneW    = (gameW - 100) / 3;
-
-    const newWords: WordItem[] = texts.map((text, i) => {
-      const slotTop = yTop + i * slotH;
-      const startY  = slotTop + Math.random() * Math.max(0, slotH - WORD_BOX_H - 4);
-      const zone    = i % 3;
-      const x       = 8 + zone * zoneW + Math.random() * Math.max(0, zoneW - 40);
-      const id      = newId();
-      // 모든 단어에 동일한 duration → startY에 관계없이 항상 FALL_BASE_DURATION의 시간 비율 확보
-      return { id, text, x, duration: FALL_BASE_DURATION, cleared: false, missed: false, pausedMs: 0, startY };
-    });
-
-    setWords(newWords);
-
-    // 오답 타이머: distToGround / fullRange 비율로 계산 → 아래 단어도 충분한 시간 확보
-    newWords.forEach(w => {
-      const fullRange    = (areaH + 60) - w.startY;
-      const distToGround = Math.max(0, (areaH - WORD_BOX_H) - w.startY);
-      const timeToGround = Math.round(FALL_BASE_DURATION * distToGround / fullRange);
-      wordDeadlines.current.set(w.id, Date.now() + timeToGround);
-      wordTimers.current.set(w.id, setTimeout(() => handleBottom(w.id), timeToGround));
-    });
-  }, [stage, gameW, gameAreaH, isGamePaused]);
+    const pool = getWordPool(stage);
+    const shuffled = [...pool].sort(() => Math.random() - 0.5);
+    pendingSpawnsRef.current = shuffled.map((text) => ({ text }));
+    spawnNextWord();
+  }, [stage, gameW, gameAreaH, isGamePaused, spawnNextWord]);
 
   // 카운트다운: 3→2→1→0 후 재개
   useEffect(() => {
@@ -412,6 +558,13 @@ export default function GameScreen({ navigation, route }: Props) {
       !w.cleared && !w.missed ? { ...w, pausedMs: w.pausedMs + pausedDuration } : w
     ));
 
+    // 일시정지 중 등장하지 못한 단어가 있으면 남은 시간만큼만 기다려 재스케줄링
+    if (pendingSpawnsRef.current.length > 0 && spawnTimerDeadline.current !== null) {
+      const remaining = Math.max(0, spawnTimerDeadline.current - T_pause);
+      spawnTimerDeadline.current = Date.now() + remaining;
+      spawnTimer.current = setTimeout(() => spawnNextWordRef.current(), remaining);
+    }
+
     startListen();
     setCountdown(null);
   }, [countdown]);
@@ -425,8 +578,21 @@ export default function GameScreen({ navigation, route }: Props) {
   const handleCloseSettingsRef = useRef(handleCloseSettings);
   handleCloseSettingsRef.current = handleCloseSettings;
 
+  const pauseGameRef = useRef(pauseGame);
+  pauseGameRef.current = pauseGame;
+
   const settingsOpenRef = useRef(settingsOpen);
   settingsOpenRef.current = settingsOpen;
+
+  // 홈 버튼 / 앱 전환으로 백그라운드 진입 시 일시정지
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', nextState => {
+      if (nextState === 'background' || nextState === 'inactive') {
+        pauseGameRef.current();
+      }
+    });
+    return () => sub.remove();
+  }, []);
 
   // Android 뒤로가기 → 설정창 토글
   useEffect(() => {
@@ -446,6 +612,7 @@ export default function GameScreen({ navigation, route }: Props) {
   const handleGoHome = useCallback(() => {
     active.current = false;
     ExpoSpeechRecognitionModule.stop();
+    if (spawnTimer.current !== null) { clearTimeout(spawnTimer.current); spawnTimer.current = null; }
     wordTimers.current.forEach(t => clearTimeout(t));
     wordTimers.current.clear();
     navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
@@ -459,7 +626,7 @@ export default function GameScreen({ navigation, route }: Props) {
     return () => {
       active.current = false;
       ExpoSpeechRecognitionModule.stop();
-      // 게임 종료 시 모든 단어 타이머 정리
+      if (spawnTimer.current !== null) { clearTimeout(spawnTimer.current); spawnTimer.current = null; }
       wordTimers.current.forEach(timer => clearTimeout(timer));
       wordTimers.current.clear();
     };
@@ -474,20 +641,16 @@ export default function GameScreen({ navigation, route }: Props) {
             <Text style={styles.levelVal}>{getStageInfo(stage).label}</Text>
           </View>
           <View style={styles.col}>
-            <Text style={styles.labelSm}>진행</Text>
-            <Text style={styles.levelVal}>{cleared}/{WORDS_TO_SPAWN_BY_DIFF[difficulty]}</Text>
-          </View>
-          <View style={styles.col}>
             <Text style={styles.labelSm}>점수</Text>
             <Text style={styles.scoreVal}>{score}</Text>
           </View>
+          <View style={styles.col}>
+            <Text style={styles.labelSm}>목표</Text>
+            <Text style={styles.levelVal}>{SCORE_TO_CLEAR}</Text>
+          </View>
         </View>
-        <View style={styles.hearts}>
-          {[0,1,2].map(i => (
-            <Text key={i} style={[styles.heart, i >= lives && styles.heartLost]}>
-              {i >= lives ? '♡' : '♥'}
-            </Text>
-          ))}
+        <View style={styles.headerRight}>
+          <HpBar lives={lives} maxLives={3} />
           <TouchableOpacity onPress={pauseGame} style={styles.gearBtn} hitSlop={8}>
             <Text style={styles.gearIcon}>⚙</Text>
           </TouchableOpacity>
@@ -526,10 +689,8 @@ export default function GameScreen({ navigation, route }: Props) {
         </View>
 
         <VoicePanel
+          ref={voicePanelRef}
           isListening={isListening}
-          transcript={transcript}
-          lastMatched={lastMatched}
-          side={isLandscape}
         />
       </View>
 
@@ -555,10 +716,8 @@ const styles = StyleSheet.create({
   labelSm: { color: '#6666aa', fontSize: 10, letterSpacing: 1 },
   levelVal: { color: '#aaaaff', fontSize: 16, fontWeight: 'bold' },
   scoreVal: { color: '#fff', fontSize: 24, fontWeight: '900', textAlign: 'center' },
-  hearts: { flexDirection: 'row', gap: 4, width: 84, justifyContent: 'flex-end' },
-  heart: { fontSize: 20, color: '#ff4466' },
-  heartLost: { color: '#553344', opacity: 0.35 },
-  body: { flex: 1, flexDirection: 'row' },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  body: { flex: 1, flexDirection: 'column' },
   game: { flex: 1, position: 'relative', overflow: 'hidden' },
   ground: {
     position: 'absolute', bottom: 0, left: 0, right: 0, height: 2,

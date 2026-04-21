@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { memo, useEffect, useRef } from 'react';
 import { View, StyleSheet, Animated } from 'react-native';
 
 interface Props {
@@ -11,9 +11,8 @@ interface Props {
 export const CHAR_WIDTH = 44;
 export const CHAR_HEIGHT = 56; // 머리 22 + 몸통 26 + 다리 8
 
-export default function Character({ x, bottom = 10, isListening }: Props) {
+const Character = memo(function Character({ x, bottom = 10, isListening }: Props) {
   const eyeGlow = useRef(new Animated.Value(0.7)).current;
-  const bodyGlow = useRef(new Animated.Value(0.85)).current;
 
   useEffect(() => {
     if (isListening) {
@@ -62,7 +61,9 @@ export default function Character({ x, bottom = 10, isListening }: Props) {
       </View>
     </Animated.View>
   );
-}
+});
+
+export default Character;
 
 const HEAD_COLOR = '#3399ff';
 const BODY_COLOR = '#1155cc';

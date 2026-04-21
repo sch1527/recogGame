@@ -165,8 +165,8 @@ export default function SettingsModal({ visible, onClose, showDifficulty = false
               })}
             </View>
             <Text style={styles.diffHint}>
-              {difficulty === 'easy' ? '클리어 단어 6개' :
-               difficulty === 'hard' ? '클리어 단어 8개' : '클리어 단어 10개'}
+              {difficulty === 'easy' ? '클리어 점수: 800' :
+               difficulty === 'hard' ? '클리어 점수: 1000' : '클리어 점수: 1200'}
             </Text>
           </View>
         )}

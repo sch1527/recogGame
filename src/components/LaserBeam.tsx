@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { memo, useEffect, useRef } from 'react';
 import { Animated, StyleSheet } from 'react-native';
 
 export interface BeamData {
@@ -13,7 +13,7 @@ interface Props extends BeamData {
   onDone: (id: string) => void;
 }
 
-export default function LaserBeam({ id, x1, y1, x2, y2, onDone }: Props) {
+const LaserBeam = memo(function LaserBeam({ id, x1, y1, x2, y2, onDone }: Props) {
   const opacity = useRef(new Animated.Value(0)).current;
   const scaleY = useRef(new Animated.Value(1)).current;
 
@@ -66,17 +66,14 @@ export default function LaserBeam({ id, x1, y1, x2, y2, onDone }: Props) {
       ]}
     />
   );
-}
+});
+
+export default LaserBeam;
 
 const styles = StyleSheet.create({
   beam: {
     position: 'absolute',
     backgroundColor: '#00eeff',
     borderRadius: 2,
-    shadowColor: '#00eeff',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 1,
-    shadowRadius: 8,
-    elevation: 10,
   },
 });

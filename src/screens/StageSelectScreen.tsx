@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  SafeAreaView, BackHandler, useWindowDimensions,
+  SafeAreaView, BackHandler,
 } from 'react-native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../App';
@@ -13,8 +13,6 @@ import SettingsModal from '../components/SettingsModal';
 type Props = { navigation: NativeStackNavigationProp<RootStackParamList, 'StageSelect'> };
 
 export default function StageSelectScreen({ navigation }: Props) {
-  const { width, height } = useWindowDimensions();
-  const isLandscape = width > height;
   const [unlocked, setUnlocked] = useState<number[]>([1]);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
@@ -45,7 +43,7 @@ export default function StageSelectScreen({ navigation }: Props) {
         <Text style={styles.allClear}>🏆 전체 클리어!</Text>
       )}
 
-      <View style={[styles.grid, isLandscape && styles.gridLand]}>
+      <View style={styles.grid}>
         {Object.entries(STAGES).map(([key, info]) => {
           const stageNum = Number(key);
           const isUnlocked = unlocked.includes(stageNum);
@@ -106,7 +104,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row', flexWrap: 'wrap',
     justifyContent: 'center', gap: 16, marginVertical: 24,
   },
-  gridLand: { gap: 12 },
   card: {
     width: 140, height: 140, borderRadius: 20,
     alignItems: 'center', justifyContent: 'center', gap: 6,

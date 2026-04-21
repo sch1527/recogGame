@@ -1,16 +1,30 @@
-import React, { useEffect, useRef } from 'react';
+import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { View, Text, StyleSheet, Animated } from 'react-native';
+
+export interface VoicePanelHandle {
+  setTranscript: (t: string) => void;
+  setLastMatched: (word: string) => void;
+  setSkillCharge: (charge: number) => void;
+}
+
+const SKILL_MAX = 10;
 
 interface Props {
   isListening: boolean;
-  transcript: string;
-  lastMatched: string;
-  side?: boolean; // 가로 모드에서 우측 사이드바로 표시
 }
 
-export default function VoicePanel({ isListening, transcript, lastMatched, side = false }: Props) {
+const VoicePanel = forwardRef<VoicePanelHandle, Props>(function VoicePanel({ isListening }, ref) {
+  const [transcript, setTranscript] = useState('');
+  const [lastMatched, setLastMatched] = useState('');
+  const [skillCharge, setSkillCharge] = useState(0);
   const pulse = useRef(new Animated.Value(1)).current;
   const matchOpacity = useRef(new Animated.Value(0)).current;
+
+  useImperativeHandle(ref, () => ({
+    setTranscript,
+    setLastMatched,
+    setSkillCharge,
+  }));
 
   useEffect(() => {
     if (isListening) {
@@ -31,24 +45,7 @@ export default function VoicePanel({ isListening, transcript, lastMatched, side 
     Animated.timing(matchOpacity, { toValue: 0, duration: 1500, useNativeDriver: true }).start();
   }, [lastMatched]);
 
-  if (side) {
-    return (
-      <View style={styles.sideContainer}>
-        <Animated.View style={[styles.mic, { transform: [{ scale: pulse }] }]}>
-          <Text style={styles.micIcon}>{isListening ? '🎤' : '🔇'}</Text>
-        </Animated.View>
-        <Text style={styles.sideStatus}>{isListening ? '듣는 중' : '대기 중'}</Text>
-        {!!transcript && (
-          <Text style={styles.sideTranscript} numberOfLines={2}>"{transcript}"</Text>
-        )}
-        {!!lastMatched && (
-          <Animated.Text style={[styles.sideMatched, { opacity: matchOpacity }]}>
-            ✓ {lastMatched}
-          </Animated.Text>
-        )}
-      </View>
-    );
-  }
+  const ready = skillCharge >= SKILL_MAX;
 
   return (
     <View style={styles.container}>
@@ -59,15 +56,24 @@ export default function VoicePanel({ isListening, transcript, lastMatched, side 
         <Text style={styles.status}>{isListening ? '듣는 중...' : '대기 중'}</Text>
         {!!transcript && <Text style={styles.transcript} numberOfLines={1}>"{transcript}"</Text>}
       </View>
+      <View style={styles.skillWrap}>
+        <Text style={[styles.skillIcon, ready && styles.skillIconReady]}>⚡</Text>
+        <View style={styles.pips}>
+          {Array.from({ length: SKILL_MAX }, (_, i) => (
+            <View key={i} style={[styles.pip, i < skillCharge && styles.pipFilled]} />
+          ))}
+        </View>
+      </View>
       {!!lastMatched && (
         <Animated.Text style={[styles.matched, { opacity: matchOpacity }]}>✓ {lastMatched}</Animated.Text>
       )}
     </View>
   );
-}
+});
+
+export default VoicePanel;
 
 const styles = StyleSheet.create({
-  // 하단 바 (세로 모드)
   container: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -88,20 +94,10 @@ const styles = StyleSheet.create({
   status: { color: 'rgba(200,200,255,0.6)', fontSize: 12 },
   transcript: { color: '#fff', fontSize: 15, fontWeight: '600', marginTop: 2 },
   matched: { color: '#44ff88', fontSize: 14, fontWeight: 'bold' },
-
-  // 우측 사이드바 (가로 모드)
-  sideContainer: {
-    width: 130,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,30,0.85)',
-    borderLeftWidth: 1,
-    borderLeftColor: 'rgba(100,100,255,0.3)',
-    paddingVertical: 12,
-    paddingHorizontal: 10,
-    gap: 8,
-  },
-  sideStatus: { color: 'rgba(200,200,255,0.6)', fontSize: 11, textAlign: 'center' },
-  sideTranscript: { color: '#fff', fontSize: 13, fontWeight: '600', textAlign: 'center' },
-  sideMatched: { color: '#44ff88', fontSize: 13, fontWeight: 'bold', textAlign: 'center' },
+  skillWrap: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  skillIcon: { fontSize: 11, color: '#555599' },
+  skillIconReady: { color: '#ffdd22' },
+  pips: { flexDirection: 'row', gap: 2 },
+  pip: { width: 5, height: 8, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.12)' },
+  pipFilled: { backgroundColor: '#ffcc00' },
 });
