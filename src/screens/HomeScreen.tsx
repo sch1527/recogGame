@@ -4,6 +4,7 @@ import LottieView from 'lottie-react-native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../App';
 import SettingsModal from '../components/SettingsModal';
+import { showInterstitial } from '../utils/admob';
 
 type Props = { navigation: NativeStackNavigationProp<RootStackParamList, 'Home'> };
 
@@ -13,6 +14,7 @@ export default function HomeScreen({ navigation }: Props) {
 
   useEffect(() => {
     Animated.timing(fadeIn, { toValue: 1, duration: 700, useNativeDriver: true }).start();
+
   }, []);
 
   useEffect(() => {
@@ -30,7 +32,7 @@ export default function HomeScreen({ navigation }: Props) {
       </TouchableOpacity>
 
       <Animated.View style={[styles.content, { opacity: fadeIn }]}>
-        <LottieView source={require('../../assets/Welcome.json')} autoPlay loop style={styles.lottie} />
+        {/* <LottieView source={require('../../assets/Welcome.json')} autoPlay loop style={styles.lottie} /> */}
         <Text style={styles.title}>산성비</Text>
         <Text style={styles.subtitle}>음성 인식 게임</Text>
 
@@ -39,8 +41,14 @@ export default function HomeScreen({ navigation }: Props) {
           <Text style={styles.infoText}>❤️ 라이프 3개</Text>
         </View>
 
-        <TouchableOpacity style={styles.btn} onPress={() => navigation.navigate('StageSelect')}>
+        <TouchableOpacity
+          style={styles.btn}
+          onPress={() => showInterstitial(() => navigation.navigate('StageSelect'))}
+        >
           <Text style={styles.btnText}>게임 시작</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.charBtn} onPress={() => navigation.navigate('CharacterSelect')}>
+          <Text style={styles.charBtnText}>캐릭터 선택</Text>
         </TouchableOpacity>
       </Animated.View>
 
@@ -71,4 +79,6 @@ const styles = StyleSheet.create({
   btnText: { color: '#fff', fontSize: 22, fontWeight: 'bold', letterSpacing: 2 },
   gearBtn: { position: 'absolute', top: 12, right: 16, zIndex: 10, padding: 8 },
   gearIcon: { fontSize: 24, color: '#6666aa' },
+  charBtn: { marginTop: 16, paddingHorizontal: 40, paddingVertical: 12, borderRadius: 24, borderWidth: 1, borderColor: '#4466ff' },
+  charBtnText: { color: '#8899ff', fontSize: 16, fontWeight: 'bold', letterSpacing: 1 },
 });

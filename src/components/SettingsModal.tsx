@@ -112,20 +112,23 @@ const slStyles = StyleSheet.create({
 export default function SettingsModal({ visible, onClose, showDifficulty = false, onGoHome }: Props) {
   const { bgmVolume, sfxVolume, setBgmVolume, setSfxVolume, difficulty, setDifficulty } = useSettings();
   const opacity = useRef(new Animated.Value(0)).current;
+  const [rendered, setRendered] = React.useState(visible);
 
   useEffect(() => {
-    Animated.timing(opacity, {
-      toValue: visible ? 1 : 0,
-      duration: 180,
-      useNativeDriver: true,
-    }).start();
+    if (visible) {
+      setRendered(true);
+      Animated.timing(opacity, { toValue: 1, duration: 180, useNativeDriver: true }).start();
+    } else {
+      Animated.timing(opacity, { toValue: 0, duration: 180, useNativeDriver: true }).start(
+        () => setRendered(false)
+      );
+    }
   }, [visible]);
 
-  // visible=false 이고 완전히 투명해지면 터치를 막지 않도록 pointerEvents 제어
-  const pointerEvents = visible ? 'auto' : 'none';
+  if (!rendered) return null;
 
   return (
-    <Animated.View style={[styles.overlay, { opacity }]} pointerEvents={pointerEvents}>
+    <Animated.View style={[styles.overlay, { opacity }]}>
       {/* 오버레이 탭 → 닫기 */}
       <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
 

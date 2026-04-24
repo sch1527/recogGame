@@ -31,11 +31,12 @@ const FallingWord = memo(function FallingWord({ word, screenHeight, paused = fal
   const fallAnim   = useRef<Animated.CompositeAnimation | null>(null);
 
   // 현재 애니메이션 세그먼트 정보 (리스너 없이 시간으로 Y 계산)
-  const segStartTime = useRef(Date.now());
-  const segStartY    = useRef(word.startY);
-  const segDuration  = useRef(word.duration);
-  const segEndY      = useRef<number>(0); // screenHeight + 60, 초기화는 애니메이션 시작 시
+  const segStartTime  = useRef(Date.now());
+  const segStartY     = useRef(word.startY);
+  const segDuration   = useRef(word.duration);
+  const segEndY       = useRef<number>(0);
   const hasBeenPaused = useRef(false);
+  const pausedAtY     = useRef(word.startY); // 일시정지 시점의 Y (벽시계 기반 재계산 방지)
 
   // 낙하 애니메이션 시작
   useEffect(() => {
@@ -61,16 +62,14 @@ const FallingWord = memo(function FallingWord({ word, screenHeight, paused = fal
     if (paused) {
       fallAnim.current?.stop();
       hasBeenPaused.current = true;
-      // 리스너 없이 시간으로 현재 Y 계산
       const elapsed = Date.now() - segStartTime.current;
       const progress = Math.min(elapsed / segDuration.current, 1);
       const currentY = segStartY.current + (segEndY.current - segStartY.current) * progress;
+      pausedAtY.current = currentY; // 재개 시 벽시계 재계산 대신 이 값 사용
       onPaused?.(word.id, currentY);
     } else if (hasBeenPaused.current) {
       hasBeenPaused.current = false;
-      const elapsed = Date.now() - segStartTime.current;
-      const progress = Math.min(elapsed / segDuration.current, 1);
-      const fromY = segStartY.current + (segEndY.current - segStartY.current) * progress;
+      const fromY = pausedAtY.current; // 백그라운드 경과 시간 무관하게 정확한 위치 사용
       const endY = screenHeight + 60;
       const distRemain = Math.max(0, endY - fromY);
       const fullRange  = endY - word.startY;

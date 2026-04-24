@@ -1,0 +1,45 @@
+diff --git a/node_modules/react-native-google-mobile-ads/android/src/main/java/io/invertase/googlemobileads/ReactNativeGoogleMobileAdsMediaViewManager.kt b/node_modules/react-native-google-mobile-ads/android/src/main/java/io/invertase/googlemobileads/ReactNativeGoogleMobileAdsMediaViewManager.kt
+index 42669b0..023e0db 100644
+--- a/node_modules/react-native-google-mobile-ads/android/src/main/java/io/invertase/googlemobileads/ReactNativeGoogleMobileAdsMediaViewManager.kt
++++ b/node_modules/react-native-google-mobile-ads/android/src/main/java/io/invertase/googlemobileads/ReactNativeGoogleMobileAdsMediaViewManager.kt
+@@ -27,9 +27,8 @@ import com.facebook.react.viewmanagers.RNGoogleMobileAdsMediaViewManagerDelegate
+ import com.facebook.react.viewmanagers.RNGoogleMobileAdsMediaViewManagerInterface
+ 
+ @ReactModule(name = ReactNativeGoogleMobileAdsMediaViewManager.NAME)
+-class ReactNativeGoogleMobileAdsMediaViewManager(
+-  reactContext: ReactApplicationContext
+-) : ViewGroupManager<ReactNativeGoogleMobileAdsMediaView>(reactContext),
++class ReactNativeGoogleMobileAdsMediaViewManager :
++  ViewGroupManager<ReactNativeGoogleMobileAdsMediaView>(),
+   RNGoogleMobileAdsMediaViewManagerInterface<ReactNativeGoogleMobileAdsMediaView> {
+   private val delegate: ViewManagerDelegate<ReactNativeGoogleMobileAdsMediaView> = RNGoogleMobileAdsMediaViewManagerDelegate(this)
+ 
+diff --git a/node_modules/react-native-google-mobile-ads/android/src/main/java/io/invertase/googlemobileads/ReactNativeGoogleMobileAdsNativeAdViewManager.kt b/node_modules/react-native-google-mobile-ads/android/src/main/java/io/invertase/googlemobileads/ReactNativeGoogleMobileAdsNativeAdViewManager.kt
+index 5ae4391..e583459 100644
+--- a/node_modules/react-native-google-mobile-ads/android/src/main/java/io/invertase/googlemobileads/ReactNativeGoogleMobileAdsNativeAdViewManager.kt
++++ b/node_modules/react-native-google-mobile-ads/android/src/main/java/io/invertase/googlemobileads/ReactNativeGoogleMobileAdsNativeAdViewManager.kt
+@@ -29,9 +29,8 @@ import com.facebook.react.viewmanagers.RNGoogleMobileAdsNativeViewManagerDelegat
+ import com.facebook.react.viewmanagers.RNGoogleMobileAdsNativeViewManagerInterface
+ 
+ @ReactModule(name = ReactNativeGoogleMobileAdsNativeAdViewManager.NAME)
+-class ReactNativeGoogleMobileAdsNativeAdViewManager(
+-  reactContext: ReactApplicationContext
+-) : ViewGroupManager<ReactNativeGoogleMobileAdsNativeAdView>(reactContext),
++class ReactNativeGoogleMobileAdsNativeAdViewManager :
++  ViewGroupManager<ReactNativeGoogleMobileAdsNativeAdView>(),
+   RNGoogleMobileAdsNativeViewManagerInterface<ReactNativeGoogleMobileAdsNativeAdView> {
+   private val delegate: ViewManagerDelegate<ReactNativeGoogleMobileAdsNativeAdView> = RNGoogleMobileAdsNativeViewManagerDelegate(this)
+ 
+diff --git a/node_modules/react-native-google-mobile-ads/android/src/main/java/io/invertase/googlemobileads/ReactNativeGoogleMobileAdsNativeModule.kt b/node_modules/react-native-google-mobile-ads/android/src/main/java/io/invertase/googlemobileads/ReactNativeGoogleMobileAdsNativeModule.kt
+index f1fb219..7431d9b 100644
+--- a/node_modules/react-native-google-mobile-ads/android/src/main/java/io/invertase/googlemobileads/ReactNativeGoogleMobileAdsNativeModule.kt
++++ b/node_modules/react-native-google-mobile-ads/android/src/main/java/io/invertase/googlemobileads/ReactNativeGoogleMobileAdsNativeModule.kt
+@@ -31,7 +31,7 @@ import com.google.android.gms.ads.VideoOptions
+ import com.google.android.gms.ads.nativead.NativeAd
+ import com.google.android.gms.ads.nativead.NativeAdOptions
+ 
+-@ReactModule(ReactNativeGoogleMobileAdsNativeModule.NAME)
++@ReactModule(name = ReactNativeGoogleMobileAdsNativeModule.NAME)
+ class ReactNativeGoogleMobileAdsNativeModule(
+   reactContext: ReactApplicationContext
+ ) : NativeGoogleMobileAdsNativeModuleSpec(reactContext) {

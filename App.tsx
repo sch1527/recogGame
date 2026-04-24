@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -7,10 +7,13 @@ import StageSelectScreen from './src/screens/StageSelectScreen';
 import GameScreen from './src/screens/GameScreen';
 import StageClearScreen from './src/screens/StageClearScreen';
 import GameOverScreen from './src/screens/GameOverScreen';
+import CharacterSelectScreen from './src/screens/CharacterSelectScreen';
 import { SettingsProvider } from './src/context/SettingsContext';
+import { initAds } from './src/utils/admob';
 
 export type RootStackParamList = {
   Home: undefined;
+  CharacterSelect: undefined;
   StageSelect: undefined;
   Game: { stage: number };
   StageClear: { stage: number; score: number };
@@ -20,6 +23,8 @@ export type RootStackParamList = {
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export default function App() {
+  useEffect(() => { initAds(); }, []);
+
   return (
     <SettingsProvider>
     <NavigationContainer>
@@ -32,6 +37,7 @@ export default function App() {
         }}
       >
         <Stack.Screen name="Home" component={HomeScreen} />
+        <Stack.Screen name="CharacterSelect" component={CharacterSelectScreen} />
         <Stack.Screen name="StageSelect" component={StageSelectScreen} />
         <Stack.Screen name="Game" component={GameScreen} />
         <Stack.Screen name="StageClear" component={StageClearScreen} />

@@ -76,6 +76,7 @@ function isFuzzyMatch(target: string, spoken: string): boolean {
 import type { RouteProp } from '@react-navigation/native';
 import { unlockStage } from '../utils/unlocks';
 import { useSettings } from '../context/SettingsContext';
+import { CHARACTERS } from '../data/characters';
 
 const SCORE_TO_CLEAR_BY_DIFF = { easy: 800, normal: 1000, hard: 1200 } as const; // 스테이지 클리어 목표 점수
 
@@ -173,7 +174,8 @@ export default function GameScreen({ navigation, route }: Props) {
   const { width: W } = useWindowDimensions();
   const gameW = W;
 
-  const { difficulty } = useSettings();
+  const { difficulty, characterId } = useSettings();
+  const characterTheme = CHARACTERS.find(c => c.id === characterId) ?? CHARACTERS[0];
   const SCORE_TO_CLEAR = SCORE_TO_CLEAR_BY_DIFF[difficulty];
 
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -189,6 +191,7 @@ export default function GameScreen({ navigation, route }: Props) {
   const matchCountRef = useRef(0);
 
   const active = useRef(true);
+  const isReady = useRef(false); // 권한 처리 완료 후 true → AppState 일시정지 활성화
   const scoreRef = useRef(0);
 
   const livesRef = useRef(3);
@@ -283,28 +286,43 @@ export default function GameScreen({ navigation, route }: Props) {
       voicePanelRef.current?.setTranscript(text);
       pendingTextRef.current = text;
 
-      // rAF로 프레임당 1회만 매칭 처리 → 초당 수십 번 발생하는 result 이벤트 부하 제거
-      if (!rafPendingRef.current) {
+      // 마지막 단어(interim)는 즉시 처리 — 음성 엔진 latency 외 코드 지연 제거
+      // 확정 단어들은 rAF로 배칭하되, 여러 단어가 동시에 매칭될 때 200ms씩 순차 발사
+      const processResult = (t: string) => {
+        if (!t) return;
+        const allWords = t.toLowerCase().split(/\s+/);
+        if (allWords.length < processedUpTo.current) {
+          processedUpTo.current = 0;
+          lastSpokenWordRef.current = '';
+        }
+        const toMatch: string[] = [];
+        for (let i = processedUpTo.current; i < allWords.length - 1; i++) {
+          toMatch.push(allWords[i]);
+        }
+        processedUpTo.current = Math.max(processedUpTo.current, allWords.length - 1);
+        const lastWord = allWords[allWords.length - 1];
+        if (lastWord !== lastSpokenWordRef.current) {
+          lastSpokenWordRef.current = lastWord;
+          toMatch.push(lastWord);
+        }
+        // 단어 간 200ms 간격으로 순차 발사 → "apple banana" 동시 레이저 방지
+        toMatch.forEach((word, i) => {
+          if (i === 0) matchWord(word);
+          else setTimeout(() => { if (active.current) matchWord(word); }, i * 200);
+        });
+      };
+
+      const allWords = text.toLowerCase().split(/\s+/);
+      const lastWord = allWords[allWords.length - 1];
+      if (text && lastWord !== lastSpokenWordRef.current) {
+        // 마지막 단어가 바뀌면 즉시 처리
+        processResult(text);
+      } else if (!rafPendingRef.current) {
+        // 변화 없으면 rAF로 배칭 (확정 단어 체크용)
         rafPendingRef.current = true;
         requestAnimationFrame(() => {
           rafPendingRef.current = false;
-          const t = pendingTextRef.current;
-          if (!t) return;
-          const allWords = t.toLowerCase().split(/\s+/);
-          if (allWords.length < processedUpTo.current) {
-            processedUpTo.current = 0;
-            lastSpokenWordRef.current = '';
-          }
-          for (let i = processedUpTo.current; i < allWords.length - 1; i++) {
-            matchWord(allWords[i]);
-          }
-          processedUpTo.current = Math.max(processedUpTo.current, allWords.length - 1);
-          // 마지막 단어가 이전과 다를 때만 시도 (같은 interim이 반복되는 경우 스킵)
-          const lastWord = allWords[allWords.length - 1];
-          if (lastWord !== lastSpokenWordRef.current) {
-            lastSpokenWordRef.current = lastWord;
-            matchWord(lastWord);
-          }
+          processResult(pendingTextRef.current);
         });
       }
     });
@@ -454,8 +472,8 @@ export default function GameScreen({ navigation, route }: Props) {
     wordTimers.current.set(id, setTimeout(() => handleBottom(id), Math.max(0, t_to_ground)));
   }, [handleBottom]);
 
-  const SPAWN_INTERVAL_MIN = 5000;
-  const SPAWN_INTERVAL_MAX = 8000;
+  const SPAWN_INTERVAL_MIN = difficulty === 'easy' ? 7000 : difficulty === 'hard' ? 3000 : 5000;
+  const SPAWN_INTERVAL_MAX = difficulty === 'easy' ? 11000 : difficulty === 'hard' ? 5000 : 8000;
 
   const spawnNextWord = useCallback(() => {
     if (!active.current || pendingSpawnsRef.current.length === 0) return;
@@ -587,6 +605,7 @@ export default function GameScreen({ navigation, route }: Props) {
   // 홈 버튼 / 앱 전환으로 백그라운드 진입 시 일시정지
   useEffect(() => {
     const sub = AppState.addEventListener('change', nextState => {
+      if (!isReady.current) return;
       if (nextState === 'background' || nextState === 'inactive') {
         pauseGameRef.current();
       }
@@ -621,6 +640,7 @@ export default function GameScreen({ navigation, route }: Props) {
   // 최초 음성 인식 시작
   useEffect(() => {
     ExpoSpeechRecognitionModule.requestPermissionsAsync().then(r => {
+      isReady.current = true;
       if (r.granted) startListen();
     });
     return () => {
@@ -681,6 +701,7 @@ export default function GameScreen({ navigation, route }: Props) {
             x={gameW / 2}
             bottom={10}
             isListening={isListening}
+            theme={characterTheme}
           />
           {/* 카운트다운 오버레이 */}
           {countdown !== null && countdown > 0 && (
