@@ -1,20 +1,21 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Animated, SafeAreaView, BackHandler } from 'react-native';
-import LottieView from 'lottie-react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Animated, SafeAreaView, BackHandler, ImageBackground, Image, Dimensions } from 'react-native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../App';
 import SettingsModal from '../components/SettingsModal';
-import { showInterstitial } from '../utils/admob';
+import { initAds, showInterstitial } from '../utils/admob';
 
 type Props = { navigation: NativeStackNavigationProp<RootStackParamList, 'Home'> };
 
 export default function HomeScreen({ navigation }: Props) {
+  const { width, height } = Dimensions.get('screen');
   const fadeIn = useRef(new Animated.Value(0)).current;
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   useEffect(() => {
-    Animated.timing(fadeIn, { toValue: 1, duration: 700, useNativeDriver: true }).start();
-
+    Animated.timing(fadeIn, { toValue: 1, duration: 700, useNativeDriver: true }).start(() => {
+      initAds();
+    });
   }, []);
 
   useEffect(() => {
@@ -26,59 +27,66 @@ export default function HomeScreen({ navigation }: Props) {
   }, [settingsOpen]);
 
   return (
-    <SafeAreaView style={styles.container}>
-      <TouchableOpacity style={styles.gearBtn} onPress={() => setSettingsOpen(true)}>
-        <Text style={styles.gearIcon}>⚙</Text>
-      </TouchableOpacity>
+    <ImageBackground
+      source={require('../../assets/images/home_bg.png')}
+      style={[styles.bg, { width, height }]}
+      resizeMode="stretch"
+    >
+      <SafeAreaView style={styles.container}>
+        <Animated.View style={[styles.chaContainer, { opacity: fadeIn }]}>
+          <Image source={require('../../assets/images/cha.png')} style={styles.chaImg} resizeMode="contain" />
+        </Animated.View>
+        <Animated.View style={[styles.content, { opacity: fadeIn }]}>
 
-      <Animated.View style={[styles.content, { opacity: fadeIn }]}>
-        {/* <LottieView source={require('../../assets/Welcome.json')} autoPlay loop style={styles.lottie} /> */}
-        <Text style={styles.title}>산성비</Text>
-        <Text style={styles.subtitle}>음성 인식 게임</Text>
+          <View style={styles.btnRow}>
+            <TouchableOpacity
+              onPress={() => showInterstitial(() => navigation.navigate('CharacterSelect'))}
+              activeOpacity={0.8}
+            >
+              <ImageBackground
+                source={require('../../assets/images/btn.png')}
+                style={styles.btnImg}
+                resizeMode="stretch"
+              >
+                <Text style={styles.btnText}>START</Text>
+              </ImageBackground>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setSettingsOpen(true)} activeOpacity={0.8}>
+              <ImageBackground
+                source={require('../../assets/images/btn.png')}
+                style={styles.btnImg}
+                resizeMode="stretch"
+              >
+                <Text style={styles.btnText}>OPTION</Text>
+              </ImageBackground>
+            </TouchableOpacity>
+          </View>
+        </Animated.View>
 
-        <View style={styles.info}>
-          <Text style={styles.infoText}>🎤 단어가 떨어지기 전에 말하세요</Text>
-          <Text style={styles.infoText}>❤️ 라이프 3개</Text>
-        </View>
+        <Text style={styles.copyright}>Copyright © 2026 Amanta. All Rights Reserved.</Text>
 
-        <TouchableOpacity
-          style={styles.btn}
-          onPress={() => showInterstitial(() => navigation.navigate('StageSelect'))}
-        >
-          <Text style={styles.btnText}>게임 시작</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.charBtn} onPress={() => navigation.navigate('CharacterSelect')}>
-          <Text style={styles.charBtnText}>캐릭터 선택</Text>
-        </TouchableOpacity>
-      </Animated.View>
-
-      <SettingsModal visible={settingsOpen} onClose={() => setSettingsOpen(false)} showDifficulty />
-    </SafeAreaView>
+        <SettingsModal visible={settingsOpen} onClose={() => setSettingsOpen(false)} showDifficulty />
+      </SafeAreaView>
+    </ImageBackground>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0a0a2e' },
-  content: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32 },
-  lottie: { width: 160, height: 160 },
+  bg: { flex: 1, backgroundColor: '#0a0a2e' },
+  container: { flex: 1, backgroundColor: 'transparent' },
+  content: { flex: 1, justifyContent: 'flex-end', alignItems: 'center', paddingHorizontal: 32, paddingBottom: 60 },
   title: {
     fontSize: 52, fontWeight: '900', color: '#fff', letterSpacing: 4,
     textShadowColor: '#4488ff', textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 20,
   },
   subtitle: { fontSize: 18, color: '#8888cc', marginTop: 4, marginBottom: 40, letterSpacing: 2 },
-  info: {
-    backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 16,
-    padding: 20, gap: 10, marginBottom: 40, width: '100%',
+  chaContainer: {
+    position: 'absolute', top: 50, left: 0, right: 0, bottom: 0,
+    justifyContent: 'center', alignItems: 'center',
   },
-  infoText: { color: '#aaaadd', fontSize: 16, textAlign: 'center' },
-  btn: {
-    backgroundColor: '#4466ff', paddingHorizontal: 56, paddingVertical: 18,
-    borderRadius: 32, elevation: 8,
-    shadowColor: '#4466ff', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.6, shadowRadius: 16,
-  },
-  btnText: { color: '#fff', fontSize: 22, fontWeight: 'bold', letterSpacing: 2 },
-  gearBtn: { position: 'absolute', top: 12, right: 16, zIndex: 10, padding: 8 },
-  gearIcon: { fontSize: 24, color: '#6666aa' },
-  charBtn: { marginTop: 16, paddingHorizontal: 40, paddingVertical: 12, borderRadius: 24, borderWidth: 1, borderColor: '#4466ff' },
-  charBtnText: { color: '#8899ff', fontSize: 16, fontWeight: 'bold', letterSpacing: 1 },
+  chaImg: { width: '110%', height: '80%' },
+  btnRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  btnImg: { width: 150, height: 58, alignItems: 'center', justifyContent: 'center' },
+  btnText: { color: '#fff', fontSize: 15, fontFamily: 'pre-black', letterSpacing: 2 },
+  copyright: { color: '#fff', fontFamily: 'pre-b', fontSize: 9, textAlign: 'center', paddingBottom: 16 },
 });

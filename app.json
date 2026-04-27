@@ -1,14 +1,25 @@
 {
   "expo": {
-    "name": "산성비 게임",
+    "name": "VoiceHero",
     "slug": "recog-game",
     "version": "1.0.0",
-    "orientation": "landscape",
+    "orientation": "portrait",
     "userInterfaceStyle": "dark",
+    "splash": {
+      "backgroundColor": "#0a0a2e"
+    },
     "android": {
       "package": "com.recog.game",
       "permissions": ["android.permission.RECORD_AUDIO"]
     },
-    "plugins": ["expo-speech-recognition"]
+    "plugins": [
+      "expo-speech-recognition",
+      [
+        "react-native-google-mobile-ads",
+        {
+          "androidAppId": "ca-app-pub-3892725863062404~5829724988"
+        }
+      ]
+    ]
   }
 }

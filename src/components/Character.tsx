@@ -32,8 +32,6 @@ const Character = memo(function Character({ x, bottom = 10, isListening, theme }
 
   return (
     <Animated.View style={[styles.container, { left: x - CHAR_WIDTH / 2, bottom }]}>
-      <View style={[styles.antenna, { backgroundColor: theme.accent }]} />
-      <View style={[styles.antennaTip, { backgroundColor: theme.accent, shadowColor: theme.accent }]} />
 
       <View style={[styles.head, { backgroundColor: theme.headColor, borderColor: theme.accent }]}>
         <View style={styles.eyeRow}>
@@ -69,21 +67,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     width: CHAR_WIDTH,
     alignItems: 'center',
-  },
-  antenna: {
-    width: 2,
-    height: 10,
-    borderRadius: 1,
-  },
-  antennaTip: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    marginTop: -3,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 1,
-    shadowRadius: 4,
-    elevation: 3,
   },
   head: {
     marginTop: 2,

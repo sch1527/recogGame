@@ -65,11 +65,12 @@ function phonetize(s: string): string {
 function isFuzzyMatch(target: string, spoken: string): boolean {
   const t = target.toLowerCase();
   const s = normalizeSpoken(spoken.toLowerCase());
-  const allowedDist = Math.max(1, Math.ceil(t.length * 0.5)); // 5글자 → 3자 오차 허용 (apple/april 등 처리)
+  // Interim 결과는 대부분 앞부분만 들어오므로 prefix 체크를 먼저 — 30%만 맞아도 즉시 반응
+  if (t.startsWith(s) && s.length >= 2 && s.length >= Math.ceil(t.length * 0.3)) return true;
+  const allowedDist = Math.max(1, Math.ceil(t.length * 0.5));
   if (levenshtein(t, s) <= allowedDist) return true;
-  if (levenshtein(phonetize(t), phonetize(s)) <= allowedDist) return true; // 유성/무성 혼동 허용
+  if (levenshtein(phonetize(t), phonetize(s)) <= allowedDist) return true;
   if (soundex(t) === soundex(s)) return true;
-  if (t.startsWith(s) && s.length >= Math.ceil(t.length * 0.6)) return true;
   return false;
 }
 
@@ -193,6 +194,7 @@ export default function GameScreen({ navigation, route }: Props) {
   const active = useRef(true);
   const isReady = useRef(false); // 권한 처리 완료 후 true → AppState 일시정지 활성화
   const scoreRef = useRef(0);
+  const onDeviceFailedRef = useRef(false); // on-device 실패 시 true → 클라우드로 전환
 
   const livesRef = useRef(3);
   const wordsRef = useRef<WordItem[]>([]);
@@ -216,7 +218,6 @@ export default function GameScreen({ navigation, route }: Props) {
   const spawnedRef = useRef(false);
   const spawnTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const spawnTimerDeadline = useRef<number | null>(null);
-  const pendingSpawnsRef = useRef<Array<{text: string}>>([]);
   const spawnNextWordRef = useRef<() => void>(() => {});
   isPausedRef.current = isGamePaused;  // 매 렌더마다 동기 갱신
 
@@ -244,7 +245,7 @@ export default function GameScreen({ navigation, route }: Props) {
       continuous: true,
       interimResults: true,
       addsPunctuation: false,
-      requiresOnDeviceRecognition: false,
+      requiresOnDeviceRecognition: !onDeviceFailedRef.current,
     });
   }
 
@@ -328,7 +329,7 @@ export default function GameScreen({ navigation, route }: Props) {
     });
     const s4 = mod.addListener('error', () => {
       if (!active.current || isPausedRef.current) return;
-      // 온디바이스 실패 → 클라우드로 영구 전환 후 재시작
+      onDeviceFailedRef.current = true; // 온디바이스 실패 → 클라우드로 영구 전환
       setTimeout(startListen, 100);
     });
     return () => { s1.remove(); s2.remove(); s3.remove(); s4.remove(); };
@@ -476,9 +477,9 @@ export default function GameScreen({ navigation, route }: Props) {
   const SPAWN_INTERVAL_MAX = difficulty === 'easy' ? 11000 : difficulty === 'hard' ? 5000 : 8000;
 
   const spawnNextWord = useCallback(() => {
-    if (!active.current || pendingSpawnsRef.current.length === 0) return;
-    const { text } = pendingSpawnsRef.current[0];
-    pendingSpawnsRef.current = pendingSpawnsRef.current.slice(1);
+    if (!active.current) return;
+    const pool = getWordPool(stage);
+    const text = pool[Math.floor(Math.random() * pool.length)];
 
     const areaH     = gameAreaHRef.current;
     const startY    = -WORD_BOX_H;
@@ -496,13 +497,6 @@ export default function GameScreen({ navigation, route }: Props) {
     const timeToGround = Math.round(duration * distToGround / wordRange);
     wordDeadlines.current.set(id, Date.now() + timeToGround);
     wordTimers.current.set(id, setTimeout(() => handleBottom(id), timeToGround));
-
-    // pending이 비었으면 풀에서 다시 채워 무한 스폰
-    if (pendingSpawnsRef.current.length === 0) {
-      const pool = getWordPool(stage);
-      const shuffled = [...pool].sort(() => Math.random() - 0.5);
-      pendingSpawnsRef.current = shuffled.map((t) => ({ text: t }));
-    }
 
     const delay = SPAWN_INTERVAL_MIN + Math.random() * (SPAWN_INTERVAL_MAX - SPAWN_INTERVAL_MIN);
     spawnTimerDeadline.current = Date.now() + delay;
@@ -528,14 +522,10 @@ export default function GameScreen({ navigation, route }: Props) {
   useEffect(() => {
     if (!active.current || gameAreaH === 0 || isGamePaused || spawnedRef.current) return;
     spawnedRef.current = true;
-
-    const pool = getWordPool(stage);
-    const shuffled = [...pool].sort(() => Math.random() - 0.5);
-    pendingSpawnsRef.current = shuffled.map((text) => ({ text }));
     spawnNextWord();
   }, [stage, gameW, gameAreaH, isGamePaused, spawnNextWord]);
 
-  // 카운트다운: 3→2→1→0 후 재개
+  // 카운트다운
   useEffect(() => {
     if (countdown === null) return;
 
@@ -577,7 +567,7 @@ export default function GameScreen({ navigation, route }: Props) {
     ));
 
     // 일시정지 중 등장하지 못한 단어가 있으면 남은 시간만큼만 기다려 재스케줄링
-    if (pendingSpawnsRef.current.length > 0 && spawnTimerDeadline.current !== null) {
+    if (spawnTimerDeadline.current !== null) {
       const remaining = Math.max(0, spawnTimerDeadline.current - T_pause);
       spawnTimerDeadline.current = Date.now() + remaining;
       spawnTimer.current = setTimeout(() => spawnNextWordRef.current(), remaining);
