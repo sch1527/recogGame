@@ -31,6 +31,14 @@ export const STAGES: Record<number, StageInfo> = {
   },
 };
 
+// STT가 자주 오인식하는 패턴을 직접 등록 (소문자)
+// 퍼지 매칭(50% Levenshtein)으로 커버되지 않는 경우에만 추가
+export const WORD_ALIASES: Record<string, string[]> = {
+  // lion(4글자, 임계값=2): lying은 거리=3으로 퍼지 매칭 미통과
+  'lion': ['lying', 'lyin'],
+  // 실제 플레이 중 오인식 패턴을 발견할 때마다 추가
+};
+
 export const STAGE_COUNT = Object.keys(STAGES).length;
 
 export function getStageInfo(stage: number): StageInfo {

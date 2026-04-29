@@ -7,7 +7,6 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 import type { RootStackParamList } from '../../App';
 import { getStageInfo, STAGE_COUNT } from '../data/words';
-import { showInterstitial } from '../utils/admob';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'StageClear'>;
@@ -27,7 +26,6 @@ export default function StageClearScreen({ navigation, route }: Props) {
       Animated.spring(scale, { toValue: 1, tension: 70, friction: 5, useNativeDriver: true }),
       Animated.timing(fade, { toValue: 1, duration: 400, useNativeDriver: true }),
     ]).start();
-    showInterstitial();
   }, []);
 
   return (

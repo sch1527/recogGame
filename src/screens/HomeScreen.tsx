@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, Animated, SafeAreaView, BackH
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../App';
 import SettingsModal from '../components/SettingsModal';
-import { initAds, showInterstitial } from '../utils/admob';
+import { initAds } from '../utils/admob';
 
 type Props = { navigation: NativeStackNavigationProp<RootStackParamList, 'Home'> };
 
@@ -40,7 +40,7 @@ export default function HomeScreen({ navigation }: Props) {
 
           <View style={styles.btnRow}>
             <TouchableOpacity
-              onPress={() => showInterstitial(() => navigation.navigate('CharacterSelect'))}
+              onPress={() => navigation.navigate('CharacterSelect')}
               activeOpacity={0.8}
             >
               <ImageBackground

@@ -13,30 +13,15 @@ export const CHAR_WIDTH = 44;
 export const CHAR_HEIGHT = 56;
 
 const Character = memo(function Character({ x, bottom = 10, isListening, theme }: Props) {
-  const eyeGlow = useRef(new Animated.Value(0.7)).current;
-
-  useEffect(() => {
-    if (isListening) {
-      const anim = Animated.loop(
-        Animated.sequence([
-          Animated.timing(eyeGlow, { toValue: 1, duration: 400, useNativeDriver: true }),
-          Animated.timing(eyeGlow, { toValue: 0.4, duration: 400, useNativeDriver: true }),
-        ])
-      );
-      anim.start();
-      return () => anim.stop();
-    } else {
-      eyeGlow.setValue(0.7);
-    }
-  }, [isListening]);
+  
 
   return (
     <Animated.View style={[styles.container, { left: x - CHAR_WIDTH / 2, bottom }]}>
 
       <View style={[styles.head, { backgroundColor: theme.headColor, borderColor: theme.accent }]}>
         <View style={styles.eyeRow}>
-          <Animated.View style={[styles.eye, { backgroundColor: theme.accent, shadowColor: theme.accent, opacity: eyeGlow }]} />
-          <Animated.View style={[styles.eye, { backgroundColor: theme.accent, shadowColor: theme.accent, opacity: eyeGlow }]} />
+          <Animated.View style={[styles.eye, { backgroundColor: theme.accent, shadowColor: theme.accent }]} />
+          <Animated.View style={[styles.eye, { backgroundColor: theme.accent, shadowColor: theme.accent }]} />
         </View>
         <View style={[styles.mouth, { backgroundColor: theme.accent }]} />
       </View>

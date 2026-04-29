@@ -83,116 +83,116 @@ export default function CharacterSelectScreen({ navigation }: Props) {
       style={styles.bg}
       resizeMode="cover"
     >
-    <SafeAreaView style={styles.container}>
-      {/* 상단 헤더 행 */}
-      <View style={styles.topRow}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-          <Text style={styles.backTxt}>뒤로가기</Text>
-        </TouchableOpacity>
-        <LinearGradient
-          colors={['rgba(0,0,0,0.2)', 'rgba(0,0,0,0.9)', 'rgba(0,0,0,0.2)']}
-          start={{x:0, y:0}}
-          end={{x:1, y: 0}}
-          locations={[0, 0.5, 1]}
-          style={styles.titleGradient}
-        >
-          <Text style={styles.title}>Select Hero</Text>
-        </LinearGradient>
-      </View>
+      <SafeAreaView style={styles.container}>
+        {/* 상단 헤더 행 */}
+        <View style={styles.topRow}>
+          <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+            <Text style={styles.backTxt}>뒤로가기</Text>
+          </TouchableOpacity>
+          <LinearGradient
+            colors={['rgba(0,0,0,0.2)', 'rgba(0,0,0,0.9)', 'rgba(0,0,0,0.2)']}
+            start={{x:0, y:0}}
+            end={{x:1, y: 0}}
+            locations={[0, 0.5, 1]}
+            style={styles.titleGradient}
+          >
+            <Text style={styles.title}>Select Hero</Text>
+          </LinearGradient>
+        </View>
 
-      {/* 슬라이드 + 좌우 버튼 */}
-      <View style={styles.slideContainer}>
-        <ScrollView
-          ref={scrollRef}
-          horizontal
-          pagingEnabled
-          showsHorizontalScrollIndicator={false}
-          onMomentumScrollEnd={handleScroll}
-          contentOffset={{ x: currentIndex * W, y: 0 }}
-          style={{ flexGrow: 0 }}
-        >
-          {CHARACTERS.map(c => (
-            <View key={c.id} style={[styles.slide, { width: W }]}>
-              {/* 캐릭터 정보 */}
-              <View style={[styles.chaBox, { width: boxW, height: boxH }]}>
-                <View style={{alignItems:'center'}}>
-                  <Text style={[styles.charTitle, { color: c.headColor }]}>{c.title}</Text>
+        {/* 슬라이드 + 좌우 버튼 */}
+        <View style={styles.slideContainer}>
+          <ScrollView
+            ref={scrollRef}
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            onMomentumScrollEnd={handleScroll}
+            contentOffset={{ x: currentIndex * W, y: 0 }}
+            style={{ flexGrow: 0 }}
+          >
+            {CHARACTERS.map(c => (
+              <View key={c.id} style={[styles.slide, { width: W }]}>
+                {/* 캐릭터 정보 */}
+                <View style={[styles.chaBox, { width: boxW, height: boxH }]}>
+                  <View style={{alignItems:'center'}}>
+                    <Text style={[styles.charTitle, { color: c.headColor }]}>{c.title}</Text>
+                  </View>
+                  {/* 이름 */}
+                  <View style={[styles.nameWrap]}>
+                    <Text style={styles.txt}>이름:</Text>
+                    <Text style={styles.txt}>{c.name}</Text>
+                  </View>
+                  {/* 특징 */}
+                  <View style={[styles.descWrap]}>
+                    <Text style={styles.txt}>특징:</Text>
+                    <Text style={[styles.txt, styles.desc]}>{c.description}</Text>
+                  </View>
+                  {/* 캐릭터 스탯 */}
+                  <View style={styles.statWrap}>
+                    {c.stats.map(s => (
+                      <StatBar key={s.label} label={s.label} value={s.value} accent={STAT_COLORS[s.label] ?? c.headColor} />
+                    ))}
+                  </View>                       
                 </View>
-                {/* 이름 */}
-                <View style={[styles.nameWrap]}>
-                  <Text style={styles.txt}>이름:</Text>
-                  <Text style={styles.txt}>{c.name}</Text>
+
+                {/* 캐릭터 미리보기 */}
+                <View style={[styles.previewArea, { borderColor: c.headColor, shadowColor: c.headColor, width: PREVIEW_W + 40, height: PREVIEW_H + 40 }]}>
+                  <View style={{ width: CHAR_WIDTH, height: CHAR_HEIGHT, transform: [{ scale: PREVIEW_SCALE }] }}>
+                    <Character
+                      x={CHAR_WIDTH / 2}
+                      bottom={0}
+                      isListening={c.id === CHARACTERS[currentIndex].id}
+                      theme={c}
+                    />
+                  </View>
                 </View>
-                {/* 특징 */}
-                <View style={[styles.descWrap]}>
-                  <Text style={styles.txt}>특징:</Text>
-                  <Text style={[styles.txt, styles.desc]}>{c.description}</Text>
-                </View>
-                {/* 캐릭터 스탯 */}
-                <View style={styles.statWrap}>
-                  {c.stats.map(s => (
-                    <StatBar key={s.label} label={s.label} value={s.value} accent={STAT_COLORS[s.label] ?? c.headColor} />
-                  ))}
-                </View>                       
               </View>
+            ))}
+          </ScrollView>
 
-              {/* 캐릭터 미리보기 */}
-              <View style={[styles.previewArea, { borderColor: c.headColor, shadowColor: c.headColor, width: PREVIEW_W + 40, height: PREVIEW_H + 40 }]}>
-                <View style={{ width: CHAR_WIDTH, height: CHAR_HEIGHT, transform: [{ scale: PREVIEW_SCALE }] }}>
-                  <Character
-                    x={CHAR_WIDTH / 2}
-                    bottom={0}
-                    isListening={c.id === CHARACTERS[currentIndex].id}
-                    theme={c}
-                  />
-                </View>
-              </View>
-            </View>
-          ))}
-        </ScrollView>
+          {/* 왼쪽 버튼 */}
+          <TouchableOpacity
+            style={[styles.navBtn, styles.navBtnLeft]}
+            onPress={() => navigateTo(currentIndex - 1)}
+            disabled={currentIndex === 0}
+          >
+            <Image
+              source={currentIndex === 0
+                ? require('../../assets/images/btn_prev_next_0001.png')
+                : require('../../assets/images/btn_prev_next_0002.png')}
+              style={styles.navBtnImg}
+              resizeMode="contain"
+            />
+          </TouchableOpacity>
 
-        {/* 왼쪽 버튼 */}
-        <TouchableOpacity
-          style={[styles.navBtn, styles.navBtnLeft]}
-          onPress={() => navigateTo(currentIndex - 1)}
-          disabled={currentIndex === 0}
-        >
-          <Image
-            source={currentIndex === 0
-              ? require('../../assets/images/btn_prev_next_0001.png')
-              : require('../../assets/images/btn_prev_next_0002.png')}
-            style={styles.navBtnImg}
-            resizeMode="contain"
-          />
+          {/* 오른쪽 버튼 */}
+          <TouchableOpacity
+            style={[styles.navBtn, styles.navBtnRight]}
+            onPress={() => navigateTo(currentIndex + 1)}
+            disabled={currentIndex === CHARACTERS.length - 1}
+          >
+            <Image
+              source={currentIndex === CHARACTERS.length - 1
+                ? require('../../assets/images/btn_prev_next_0001.png')
+                : require('../../assets/images/btn_prev_next_0002.png')}
+              style={[styles.navBtnImg, { transform: [{ scaleX: -1 }] }]}
+              resizeMode="contain"
+            />
+          </TouchableOpacity>
+        </View>
+
+        {/* 확인 버튼 */}
+        <TouchableOpacity onPress={handleConfirm} activeOpacity={0.8}>
+          <ImageBackground
+            source={require('../../assets/images/btn.png')}
+            style={styles.confirmBtn}
+            resizeMode="stretch"
+          >
+            <Text style={styles.confirmText}>SELECT</Text>
+          </ImageBackground>
         </TouchableOpacity>
-
-        {/* 오른쪽 버튼 */}
-        <TouchableOpacity
-          style={[styles.navBtn, styles.navBtnRight]}
-          onPress={() => navigateTo(currentIndex + 1)}
-          disabled={currentIndex === CHARACTERS.length - 1}
-        >
-          <Image
-            source={currentIndex === CHARACTERS.length - 1
-              ? require('../../assets/images/btn_prev_next_0001.png')
-              : require('../../assets/images/btn_prev_next_0002.png')}
-            style={[styles.navBtnImg, { transform: [{ scaleX: -1 }] }]}
-            resizeMode="contain"
-          />
-        </TouchableOpacity>
-      </View>
-
-      {/* 확인 버튼 */}
-      <TouchableOpacity onPress={handleConfirm} activeOpacity={0.8}>
-        <ImageBackground
-          source={require('../../assets/images/btn.png')}
-          style={styles.confirmBtn}
-          resizeMode="stretch"
-        >
-          <Text style={styles.confirmText}>SELECT</Text>
-        </ImageBackground>
-      </TouchableOpacity>
-    </SafeAreaView>
+      </SafeAreaView>
     </ImageBackground>
   );
 }

@@ -9,13 +9,7 @@ type Props = {
   route: RouteProp<RootStackParamList, 'GameOver'>;
 };
 
-function getRank(score: number) {
-  if (score >= 500) return '전설';
-  if (score >= 300) return '고수';
-  if (score >= 150) return '중수';
-  if (score >= 50)  return '초보';
-  return '입문';
-}
+
 
 export default function GameOverScreen({ navigation, route }: Props) {
   const { score, stage } = route.params;
@@ -32,8 +26,6 @@ export default function GameOverScreen({ navigation, route }: Props) {
   return (
     <SafeAreaView style={styles.container}>
       <Animated.View style={[styles.card, { transform: [{ scale }] }]}>
-        <Text style={styles.gameOver}>게임 종료</Text>
-        <Text style={styles.rankLabel}>{getRank(score)}</Text>
         <Text style={styles.scoreLbl}>최종 점수</Text>
         <Text style={styles.scoreVal}>{score}</Text>
       </Animated.View>
@@ -57,9 +49,7 @@ const styles = StyleSheet.create({
     alignItems: 'center', borderWidth: 1, borderColor: 'rgba(100,100,255,0.3)', width: '100%',
     shadowColor: '#4466ff', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.4, shadowRadius: 24, elevation: 12,
   },
-  gameOver: { color: '#8888bb', fontSize: 16, letterSpacing: 3 },
-  rankLabel: { color: '#fff', fontSize: 32, fontWeight: '900', marginBottom: 20 },
-  scoreLbl: { color: '#6666aa', fontSize: 13, letterSpacing: 1 },
+  scoreLbl: { color: '#6666aa', fontSize: 24 },
   scoreVal: {
     color: '#ffdd44', fontSize: 52, fontWeight: '900',
     textShadowColor: '#ffdd44', textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 16,

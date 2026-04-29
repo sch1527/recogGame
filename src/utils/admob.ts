@@ -34,12 +34,36 @@ export function preloadInterstitial() {
   interstitial.load();
 }
 
+let gameEndCount = 0;
+let isFirstGameEnd = true;
+let lastGameEndTime = 0;
+
+export function tryShowInterstitialOnGameEnd(onDismiss: () => void) {
+  const now = Date.now();
+  if (now - lastGameEndTime < 1000) return; // 1초 이내 중복 호출 무시
+  lastGameEndTime = now;
+
+  if (isFirstGameEnd) {
+    isFirstGameEnd = false;
+    showInterstitial(onDismiss);
+    return;
+  }
+  gameEndCount += 1;
+  if (gameEndCount >= 3) {
+    gameEndCount = 0;
+    showInterstitial(onDismiss);
+  } else {
+    onDismiss();
+  }
+}
+
 export function showInterstitial(onDismiss?: () => void) {
   if (!interstitial || !isLoaded) {
     onDismiss?.();
     return;
   }
-  interstitial.addAdEventListener(AdEventType.CLOSED, () => {
+  const unsubscribe = interstitial.addAdEventListener(AdEventType.CLOSED, () => {
+    unsubscribe();
     isLoaded = false;
     onDismiss?.();
     preloadInterstitial();

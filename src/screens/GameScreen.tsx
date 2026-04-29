@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useKeepAwake } from 'expo-keep-awake';
-import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, BackHandler, AppState, Animated, useWindowDimensions } from 'react-native';
+import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, BackHandler, AppState, Animated, useWindowDimensions, InteractionManager } from 'react-native';
 import SettingsModal from '../components/SettingsModal';
 import { ExpoSpeechRecognitionModule } from 'expo-speech-recognition';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -9,12 +9,12 @@ import FallingWord, { WordItem } from '../components/FallingWord';
 import VoicePanel, { VoicePanelHandle } from '../components/VoicePanel';
 import Character, { CHAR_HEIGHT } from '../components/Character';
 import LaserBeam, { BeamData } from '../components/LaserBeam';
-import { getWordPool, getStageInfo } from '../data/words';
+import { getWordPool, getStageInfo, WORD_ALIASES } from '../data/words';
 
 // FallingWord 박스 높이 근사값: paddingVertical(12) + border(2) + fontSize(20) × lineHeight(1.3≈26) = 40
 const WORD_BOX_H = 40;
 // 화면 전체(startY=-60 → areaH+60)를 통과하는 기준 낙하 시간(ms) — 실제 단어별 duration은 startY에 따라 비례 조정
-const FALL_BASE_DURATION = 45000;
+const FALL_BASE_DURATION = 35000;
 
 function levenshtein(a: string, b: string): number {
   const m = a.length, n = b.length;
@@ -65,8 +65,9 @@ function phonetize(s: string): string {
 function isFuzzyMatch(target: string, spoken: string): boolean {
   const t = target.toLowerCase();
   const s = normalizeSpoken(spoken.toLowerCase());
-  // Interim 결과는 대부분 앞부분만 들어오므로 prefix 체크를 먼저 — 30%만 맞아도 즉시 반응
-  if (t.startsWith(s) && s.length >= 2 && s.length >= Math.ceil(t.length * 0.3)) return true;
+  if (WORD_ALIASES[t]?.includes(s)) return true;
+  // Interim 결과 prefix 체크 — 2글자 이상이면 즉시 반응 (20% 미만인 경우만 제외)
+  if (t.startsWith(s) && s.length >= 2 && s.length >= Math.ceil(t.length * 0.2)) return true;
   const allowedDist = Math.max(1, Math.ceil(t.length * 0.5));
   if (levenshtein(t, s) <= allowedDist) return true;
   if (levenshtein(phonetize(t), phonetize(s)) <= allowedDist) return true;
@@ -76,6 +77,7 @@ function isFuzzyMatch(target: string, spoken: string): boolean {
 
 import type { RouteProp } from '@react-navigation/native';
 import { unlockStage } from '../utils/unlocks';
+import { tryShowInterstitialOnGameEnd } from '../utils/admob';
 import { useSettings } from '../context/SettingsContext';
 import { CHARACTERS } from '../data/characters';
 
@@ -202,6 +204,7 @@ export default function GameScreen({ navigation, route }: Props) {
   const pendingTextRef = useRef('');     // rAF 대기 중인 최신 transcript
   const rafPendingRef = useRef(false);   // rAF 예약 여부
   const lastSpokenWordRef = useRef(''); // 마지막으로 matchWord에 넘긴 단어 (중복 방지)
+  const lastSpokenWordTimeRef = useRef(0); // lastSpokenWordRef 설정 시각 (800ms 후 만료)
   const gameAreaHRef = useRef(0);
   const gamWRef = useRef(gameW);
   // 단어 id → setTimeout 타이머
@@ -235,7 +238,9 @@ export default function GameScreen({ navigation, route }: Props) {
     wordTimers.current.forEach(t => clearTimeout(t));
     wordTimers.current.clear();
     unlockStage(stage + 1).then(() => {
-      navigation.replace('StageClear', { stage, score: scoreRef.current });
+      tryShowInterstitialOnGameEnd(() => {
+        navigation.replace('StageClear', { stage, score: scoreRef.current });
+      });
     });
   }, [score]);
 
@@ -246,6 +251,9 @@ export default function GameScreen({ navigation, route }: Props) {
       interimResults: true,
       addsPunctuation: false,
       requiresOnDeviceRecognition: !onDeviceFailedRef.current,
+      contextualStrings: getWordPool(stage),
+      iosTaskHint: 'search',
+      maxAlternatives: 3,
     });
   }
 
@@ -263,7 +271,9 @@ export default function GameScreen({ navigation, route }: Props) {
     if (livesRef.current <= 0) {
       active.current = false;
       ExpoSpeechRecognitionModule.stop();
-      navigation.replace('GameOver', { stage, score: scoreRef.current });
+      tryShowInterstitialOnGameEnd(() => {
+        navigation.replace('GameOver', { stage, score: scoreRef.current });
+      });
     }
   }, [navigation]);
 
@@ -273,6 +283,7 @@ export default function GameScreen({ navigation, route }: Props) {
       setIsListening(true);
       processedUpTo.current = 0;
       lastSpokenWordRef.current = '';
+      lastSpokenWordTimeRef.current = 0;
     });
     const s2 = mod.addListener('end', () => {
       if (active.current && !isPausedRef.current) {
@@ -283,7 +294,8 @@ export default function GameScreen({ navigation, route }: Props) {
       }
     });
     const s3 = mod.addListener('result', (e: any) => {
-      const text = e.results?.[0]?.transcript?.trim() ?? '';
+      const results: Array<{ transcript: string }> = e.results ?? [];
+      const text = results[0]?.transcript?.trim() ?? '';
       voicePanelRef.current?.setTranscript(text);
       pendingTextRef.current = text;
 
@@ -292,9 +304,10 @@ export default function GameScreen({ navigation, route }: Props) {
       const processResult = (t: string) => {
         if (!t) return;
         const allWords = t.toLowerCase().split(/\s+/);
-        if (allWords.length < processedUpTo.current) {
+        if (allWords.length <= processedUpTo.current) {
           processedUpTo.current = 0;
           lastSpokenWordRef.current = '';
+          lastSpokenWordTimeRef.current = 0;
         }
         const toMatch: string[] = [];
         for (let i = processedUpTo.current; i < allWords.length - 1; i++) {
@@ -302,8 +315,10 @@ export default function GameScreen({ navigation, route }: Props) {
         }
         processedUpTo.current = Math.max(processedUpTo.current, allWords.length - 1);
         const lastWord = allWords[allWords.length - 1];
-        if (lastWord !== lastSpokenWordRef.current) {
+        const wordExpired = Date.now() - lastSpokenWordTimeRef.current > 800;
+        if (lastWord !== lastSpokenWordRef.current || wordExpired) {
           lastSpokenWordRef.current = lastWord;
+          lastSpokenWordTimeRef.current = Date.now();
           toMatch.push(lastWord);
         }
         // 단어 간 200ms 간격으로 순차 발사 → "apple banana" 동시 레이저 방지
@@ -313,18 +328,37 @@ export default function GameScreen({ navigation, route }: Props) {
         });
       };
 
+      // 1순위: 대표 transcript로 처리
       const allWords = text.toLowerCase().split(/\s+/);
       const lastWord = allWords[allWords.length - 1];
-      if (text && lastWord !== lastSpokenWordRef.current) {
-        // 마지막 단어가 바뀌면 즉시 처리
+      const outerExpired = Date.now() - lastSpokenWordTimeRef.current > 800;
+      if (text && (lastWord !== lastSpokenWordRef.current || outerExpired)) {
         processResult(text);
       } else if (!rafPendingRef.current) {
-        // 변화 없으면 rAF로 배칭 (확정 단어 체크용)
         rafPendingRef.current = true;
         requestAnimationFrame(() => {
           rafPendingRef.current = false;
           processResult(pendingTextRef.current);
         });
+      }
+
+      // 2순위: 대표 결과 마지막 단어가 게임 단어와 매칭 안 될 때 대안 후보들도 시도
+      // (STT가 "apple"을 "april" 등으로 잘못 인식할 때 다른 후보에서 구제 — interim 포함)
+      if (results.length > 1) {
+        const primaryLast = text.toLowerCase().split(/\s+/).at(-1) ?? '';
+        const hasMatch = wordsRef.current.some(
+          w => !w.cleared && !w.missed && isFuzzyMatch(w.text, primaryLast)
+        );
+        if (!hasMatch) {
+          for (let i = 1; i < results.length; i++) {
+            const alt = results[i]?.transcript?.trim();
+            if (!alt) continue;
+            const altLast = alt.toLowerCase().split(/\s+/).at(-1) ?? '';
+            if (altLast && altLast !== primaryLast) {
+              matchWord(altLast);
+            }
+          }
+        }
       }
     });
     const s4 = mod.addListener('error', () => {
@@ -441,13 +475,16 @@ export default function GameScreen({ navigation, route }: Props) {
       });
       voicePanelRef.current?.setLastMatched(`⚡ ${word.text}`);
       voicePanelRef.current?.setTranscript('');
-      // updater 형태 유지 → 동시에 스폰된 단어가 있어도 손실 없음
+      lastSpokenWordRef.current = '';
+      processedUpTo.current = 0;
       setWords(prev => prev.map(w => !w.cleared && !w.missed && w.text === word.text ? { ...w, cleared: true } : w));
       return;
     }
 
     voicePanelRef.current?.setLastMatched(word.text);
     voicePanelRef.current?.setTranscript('');
+    lastSpokenWordRef.current = '';
+    processedUpTo.current = 0;
     setWords(prev => prev.map((w, i) => i === idx ? { ...w, cleared: true } : w));
   }, [stage]);
 
@@ -522,7 +559,9 @@ export default function GameScreen({ navigation, route }: Props) {
   useEffect(() => {
     if (!active.current || gameAreaH === 0 || isGamePaused || spawnedRef.current) return;
     spawnedRef.current = true;
-    spawnNextWord();
+    InteractionManager.runAfterInteractions(() => {
+      if (active.current) spawnNextWord();
+    });
   }, [stage, gameW, gameAreaH, isGamePaused, spawnNextWord]);
 
   // 카운트다운
@@ -630,8 +669,8 @@ export default function GameScreen({ navigation, route }: Props) {
   // 최초 음성 인식 시작
   useEffect(() => {
     ExpoSpeechRecognitionModule.requestPermissionsAsync().then(r => {
-      isReady.current = true;
-      if (r.granted) startListen();
+      isReady.current = true; // 권한 다이얼로그 종료 후 활성화 (iOS: 다이얼로그 중 inactive 방지)
+      if (r.granted) InteractionManager.runAfterInteractions(() => { startListen(); });
     });
     return () => {
       active.current = false;
